@@ -764,6 +764,7 @@ input::placeholder {
 /* ---------- Opener: slides ---------- */
 
 .slides {
+  min-width: 0;
   border: var(--rule);
   overflow: hidden;
   display: flex;
@@ -1061,9 +1062,10 @@ input::placeholder {
 /* ---------- Narrow screens ---------- */
 
 @media (max-width: 900px) {
+  /* minmax(0, …) stops wide content (the slide strip) from stretching the column past the screen. */
   .opener,
   .game {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .hero {
     border-right: 0;
@@ -1093,7 +1095,7 @@ input::placeholder {
     display: none;
   }
   .slide {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     padding: 16px;
   }
   .about > section {
