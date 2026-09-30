@@ -18,6 +18,9 @@ export interface RoomStore {
   /** Tycoon rooms, kept the same way as chess rooms. */
   loadMonopoly(maxAgeMs: number): Promise<MonopolyRoom[]>;
   saveMonopoly(room: MonopolyRoom): void;
+  /** "Bid for it" counts for games that aren't built yet. */
+  loadVotes(): Promise<Record<string, number>>;
+  addVote(game: string): void;
   close(): Promise<void>;
 }
 
@@ -35,6 +38,10 @@ export class MemoryStore implements RoomStore {
     return [];
   }
   saveMonopoly(): void {}
+  async loadVotes(): Promise<Record<string, number>> {
+    return {};
+  }
+  addVote(): void {}
   async close(): Promise<void> {}
 }
 
@@ -58,6 +65,7 @@ export class MongoStore implements RoomStore {
     private rooms: Collection<RoomDocument>,
     private results: Collection<ResultDocument>,
     private monopoly: Collection<MonopolyDocument>,
+    private votes: Collection<{ _id: string; count: number }>,
   ) {}
 
   static async connect(uri: string, dbName = "fourman"): Promise<MongoStore> {
@@ -71,7 +79,7 @@ export class MongoStore implements RoomStore {
     const monopoly = client.db(dbName).collection<MonopolyDocument>("monopoly_rooms");
     await monopoly.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await monopoly.createIndex({ phase: 1, lastActivity: -1 });
-    return new MongoStore(client, rooms, results, monopoly);
+    return new MongoStore(client, rooms, results, monopoly, client.db(dbName).collection("votes"));
   }
 
   async loadActive(maxAgeMs: number): Promise<Room[]> {
@@ -163,6 +171,22 @@ export class MongoStore implements RoomStore {
       this.writing.delete(key);
     };
     this.writing.set(key, run());
+  }
+
+  async loadVotes(): Promise<Record<string, number>> {
+    const docs = await this.votes.find().toArray();
+    return Object.fromEntries(docs.map((d) => [d._id, d.count]));
+  }
+
+  addVote(game: string): void {
+    const write = this.votes
+      .updateOne({ _id: game }, { $inc: { count: 1 } }, { upsert: true })
+      .then(
+        () => {},
+        (error: unknown) => console.error(`Saving a vote for ${game} failed:`, error),
+      )
+      .finally(() => this.pendingResults.delete(write));
+    this.pendingResults.add(write);
   }
 
   async close(): Promise<void> {

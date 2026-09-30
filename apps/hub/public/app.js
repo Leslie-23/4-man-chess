@@ -33,6 +33,97 @@ if (!reduced) {
   });
 }
 
+/* ---------- Scene details drawn from code ---------- */
+const NS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs) => {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+  return el;
+};
+// Oware: four seeds in every pit.
+const oware = document.querySelector(".oware-scene .seeds");
+if (oware) {
+  for (const cy of [52, 98]) for (let p = 0; p < 6; p++) {
+    const cx = 60 + p * 36;
+    [[-5, -4], [5, -4], [-5, 5], [5, 5]].forEach(([dx, dy], k) => {
+      const seed = svgEl("circle", { cx: cx + dx, cy: cy + dy, r: 4 });
+      seed.style.setProperty("--d", `${(p * 0.2 + k * 0.05).toFixed(2)}s`);
+      oware.append(seed);
+    });
+  }
+}
+// Bao: four rows of eight pits, two seeds each.
+const bao = document.querySelector(".bao-scene .bao-pits");
+if (bao) {
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) {
+    const cx = 38 + c * 32, cy = 31 + r * 29 + (r > 1 ? 4 : 0);
+    bao.append(svgEl("circle", { cx, cy, r: 11 }));
+    for (const dx of [-3.5, 3.5]) {
+      const seed = svgEl("circle", { cx: cx + dx, cy, r: 3.2, fill: "#efe3c8", stroke: "#6e4420", "stroke-width": 0.8, class: "seed" });
+      seed.style.setProperty("--d", `${((r * 8 + c) * 0.07).toFixed(2)}s`);
+      bao.append(seed);
+    }
+  }
+}
+// Fanorona: a 9×5 grid with diagonals from every other point, and 44 stones.
+const lines = document.querySelector(".fano-scene .fano-lines");
+const stones = document.querySelector(".fano-scene .fano-stones");
+if (lines && stones) {
+  const X = (i) => 25 + i * 25, Y = (j) => 25 + j * 25;
+  let d = "";
+  for (let j = 0; j < 5; j++) d += `M${X(0)} ${Y(j)}H${X(8)}`;
+  for (let i = 0; i < 9; i++) d += `M${X(i)} ${Y(0)}V${Y(4)}`;
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 5; j++) {
+    if ((i + j) % 2) continue;
+    if (i < 8 && j < 4) d += `M${X(i)} ${Y(j)}L${X(i + 1)} ${Y(j + 1)}`;
+    if (i > 0 && j < 4) d += `M${X(i)} ${Y(j)}L${X(i - 1)} ${Y(j + 1)}`;
+  }
+  lines.append(svgEl("path", { d }));
+  for (let j = 0; j < 5; j++) for (let i = 0; i < 9; i++) {
+    if (j === 2 && i === 4) continue;
+    const dark = j < 2 || (j === 2 && (i < 4 ? i % 2 === 0 : i % 2 === 1));
+    const stone = svgEl("circle", { cx: X(i), cy: Y(j), r: 8, fill: dark ? "#1b1b19" : "#fbfbf8", stroke: "#0b0b0b", "stroke-width": 2 });
+    // The dark stone in line with the move gets captured by approach.
+    if (i === 4 && j === 1) stone.classList.add("gone");
+    stones.append(stone);
+  }
+  const mover = svgEl("circle", { r: 8, fill: "#fbfbf8", stroke: "#0b0b0b", "stroke-width": 2 });
+  mover.append(svgEl("animateMotion", { dur: "3s", repeatCount: "indefinite", path: `M${X(4)} ${Y(3)} L${X(4)} ${Y(2)} L${X(4)} ${Y(2)}`, keyTimes: "0;0.5;1", keyPoints: "0;1;1", calcMode: "linear" }));
+  stones.append(mover);
+}
+
+/* ---------- Bid for a game ---------- */
+// Counts live on the game server; each browser remembers what it bid for so the button stays pressed.
+const VOTES_URL = "https://fourman-server.onrender.com/votes";
+const bidKey = (game) => `boardblaze:bid:${game}`;
+const hasBid = (game) => { try { return localStorage.getItem(bidKey(game)) === "1"; } catch { return false; } };
+const rememberBid = (game) => { try { localStorage.setItem(bidKey(game), "1"); } catch { /* storage blocked */ } };
+function showVotes(votes) {
+  const top = Math.max(1, ...Object.values(votes));
+  for (const card of document.querySelectorAll("[data-vote]")) {
+    const n = votes[card.dataset.vote] ?? 0;
+    card.querySelector("[data-count]").textContent = n.toLocaleString();
+    card.querySelector("[data-bar]").style.width = `${(n / top) * 100}%`;
+  }
+}
+for (const card of document.querySelectorAll("[data-vote]")) {
+  const game = card.dataset.vote;
+  const button = card.querySelector(".bid-btn");
+  if (hasBid(game)) { button.disabled = true; button.textContent = "✓ You bid"; }
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "✓ You bid";
+    button.classList.add("pop");
+    rememberBid(game);
+    burst(card);
+    try {
+      const res = await fetch(`${VOTES_URL}/${game}`, { method: "POST" });
+      if (res.ok) showVotes((await res.json()).votes);
+    } catch { /* the count catches up on the next visit */ }
+  });
+}
+fetch(VOTES_URL).then((r) => r.json()).then((d) => showVotes(d.votes)).catch(() => {});
+
 /* ---------- Tilting cards ---------- */
 for (const card of document.querySelectorAll(".game")) {
   if (reduced) break;

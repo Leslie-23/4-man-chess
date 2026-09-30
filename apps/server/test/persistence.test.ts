@@ -35,6 +35,13 @@ class JsonStore implements RoomStore {
   saveMonopoly(room: MonopolyRoom): void {
     this.monopoly.set(room.id, JSON.stringify(room));
   }
+  votes: Record<string, number> = {};
+  async loadVotes(): Promise<Record<string, number>> {
+    return { ...this.votes };
+  }
+  addVote(game: string): void {
+    this.votes[game] = (this.votes[game] ?? 0) + 1;
+  }
   async close(): Promise<void> {}
 }
 

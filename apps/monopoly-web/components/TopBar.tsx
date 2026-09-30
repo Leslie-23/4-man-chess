@@ -10,7 +10,7 @@ export function TopBar({ children }: { children?: ReactNode }) {
         {GAME_NAME}
       </Link>
       {children}
-      <a href="https://lesliepaulgames.onrender.com" className="topbar-link">All games</a>
+      <a href="https://boardblaze.onrender.com" className="topbar-link">All games</a>
     </header>
   );
 }

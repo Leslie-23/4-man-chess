@@ -2,6 +2,7 @@ import Fastify, { type FastifyServerOptions } from "fastify";
 import { Server } from "socket.io";
 import { MONOPOLY_NAMESPACE } from "@fourman/shared";
 import { Leaderboard } from "./leaderboard.js";
+import { registerVotes } from "./votes.js";
 import { MonopolyRooms } from "./monopoly/rooms.js";
 import { attachMonopoly, type MonopolyNamespace } from "./monopoly/sockets.js";
 import { DEFAULT_GROQ_MODEL, groqComplete, type Complete } from "./replies.js";
@@ -57,6 +58,8 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
   };
 
   app.get("/health", async () => ({ ok: true }));
+  // Loads the saved counts before the server starts listening.
+  app.register(async (instance) => registerVotes(instance, store));
 
   const sweeper = setInterval(() => {
     rooms.sweep(ROOM_IDLE_MS);
