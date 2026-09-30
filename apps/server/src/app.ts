@@ -1,6 +1,9 @@
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { Server } from "socket.io";
+import { MONOPOLY_NAMESPACE } from "@fourman/shared";
 import { Leaderboard } from "./leaderboard.js";
+import { MonopolyRooms } from "./monopoly/rooms.js";
+import { attachMonopoly, type MonopolyNamespace } from "./monopoly/sockets.js";
 import { DEFAULT_GROQ_MODEL, groqComplete, type Complete } from "./replies.js";
 import { RoomManager } from "./rooms.js";
 import { voiceFromEnv, type VoiceConfig } from "./voice.js";
@@ -34,6 +37,9 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
   const replies = complete === null ? undefined : (complete ?? groqFromEnv((error) => app.log.warn({ err: error }, "bot reply failed")));
   rooms.coach = Boolean(replies);
   rooms.voice = Boolean(voice);
+  // Monopoly lives beside chess on the same server, on its own namespace.
+  const monopoly = new MonopolyRooms();
+  attachMonopoly(io.of(MONOPOLY_NAMESPACE) as unknown as MonopolyNamespace, monopoly, app.log, { botDelayMs });
   const resumeBots = attachSockets(io, rooms, app.log, { botDelayMs, leaderboard, complete: replies, voice });
 
   /** Loads unfinished games from the store and lets any bot whose turn it is carry on. */
@@ -47,12 +53,15 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
 
   app.get("/health", async () => ({ ok: true }));
 
-  const sweeper = setInterval(() => rooms.sweep(ROOM_IDLE_MS), 10 * 60 * 1000).unref();
+  const sweeper = setInterval(() => {
+    rooms.sweep(ROOM_IDLE_MS);
+    monopoly.sweep(ROOM_IDLE_MS);
+  }, 10 * 60 * 1000).unref();
   app.addHook("preClose", async () => {
     clearInterval(sweeper);
     io.disconnectSockets(true);
   });
   app.addHook("onClose", async () => store.close());
 
-  return { app, io, rooms, leaderboard, restore };
+  return { app, io, rooms, monopoly, leaderboard, restore };
 }

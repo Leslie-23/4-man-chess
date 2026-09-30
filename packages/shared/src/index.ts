@@ -142,3 +142,5 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   "room:update": (room: RoomView) => void;
 }
+
+export * from "./monopoly.js";
