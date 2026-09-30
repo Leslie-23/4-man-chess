@@ -1,3 +1,4 @@
+import type { RecentGame } from "@fourman/shared";
 import { MongoClient, type Collection } from "mongodb";
 import type { Room } from "./rooms.js";
 
@@ -10,6 +11,9 @@ export interface RoomStore {
   /** Unfinished rooms touched within `maxAgeMs`, ready to resume. */
   loadActive(maxAgeMs: number): Promise<Room[]>;
   save(room: Room): void;
+  /** Every finished game, for the leaderboard. */
+  loadResults(): Promise<RecentGame[]>;
+  saveResult(game: RecentGame): void;
   close(): Promise<void>;
 }
 
@@ -19,10 +23,16 @@ export class MemoryStore implements RoomStore {
     return [];
   }
   save(): void {}
+  async loadResults(): Promise<RecentGame[]> {
+    return [];
+  }
+  saveResult(): void {}
   async close(): Promise<void> {}
 }
 
 type RoomDocument = Omit<Room, "id" | "lastActivity"> & { _id: string; lastActivity: Date; expiresAt: Date };
+/** Results are kept for good: the all-time leaderboard needs them. */
+type ResultDocument = Omit<RecentGame, "id" | "finishedAt"> & { _id: string; finishedAt: Date };
 
 /** Finished and abandoned rooms are removed by MongoDB itself after this long. */
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
@@ -31,10 +41,12 @@ export class MongoStore implements RoomStore {
   /** Rooms with a write in flight, and rooms changed again while it was. */
   private writing = new Map<string, Promise<void>>();
   private dirty = new Set<string>();
+  private pendingResults = new Set<Promise<void>>();
 
   private constructor(
     private client: MongoClient,
     private rooms: Collection<RoomDocument>,
+    private results: Collection<ResultDocument>,
   ) {}
 
   static async connect(uri: string, dbName = "fourman"): Promise<MongoStore> {
@@ -43,7 +55,9 @@ export class MongoStore implements RoomStore {
     const rooms = client.db(dbName).collection<RoomDocument>("rooms");
     await rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await rooms.createIndex({ phase: 1, lastActivity: -1 });
-    return new MongoStore(client, rooms);
+    const results = client.db(dbName).collection<ResultDocument>("results");
+    await results.createIndex({ finishedAt: -1 });
+    return new MongoStore(client, rooms, results);
   }
 
   async loadActive(maxAgeMs: number): Promise<Room[]> {
@@ -90,7 +104,25 @@ export class MongoStore implements RoomStore {
     this.writing.set(room.id, run());
   }
 
+  async loadResults(): Promise<RecentGame[]> {
+    const docs = await this.results.find().toArray();
+    return docs.map(({ _id, finishedAt, ...rest }) => ({ ...rest, id: _id, finishedAt: finishedAt.getTime() }));
+  }
+
+  saveResult(game: RecentGame): void {
+    const { id, finishedAt, ...rest } = game;
+    const write = this.results
+      .replaceOne({ _id: id }, { ...rest, finishedAt: new Date(finishedAt) }, { upsert: true })
+      .then(
+        () => {},
+        (error: unknown) => console.error(`Saving the result of room ${id} to MongoDB failed:`, error),
+      )
+      .finally(() => this.pendingResults.delete(write));
+    this.pendingResults.add(write);
+  }
+
   async close(): Promise<void> {
+    await Promise.all(this.pendingResults);
     while (this.writing.size) await Promise.all(this.writing.values());
     await this.client.close();
   }

@@ -12,7 +12,8 @@ import {
   type PlayerColor,
   type VariantId,
 } from "@fourman/game-engine";
-import type { RoomPhase, RoomView, SeatPlan } from "@fourman/shared";
+import { MAX_CHAT_LENGTH, type ChatMessage, type RoomPhase, type RoomView, type SeatPlan } from "@fourman/shared";
+import { GREETINGS, banter } from "./banter.js";
 
 /** An error whose message is safe to send back to the client. */
 export class RoomError extends Error {}
@@ -35,11 +36,14 @@ export interface Room {
   seats: Partial<Record<PlayerColor, Seat | null>>;
   plan: Partial<Record<PlayerColor, SeatPlan>>;
   state: GameState;
+  chat: ChatMessage[];
   lastActivity: number;
 }
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_NAME_LENGTH = 20;
+/** Older messages drop off the board. */
+const CHAT_KEPT = 100;
 
 function cleanName(name: unknown): string {
   return (typeof name === "string" ? name.trim().slice(0, MAX_NAME_LENGTH) : "") || "Player";
@@ -59,11 +63,16 @@ export class RoomManager {
   private rooms = new Map<string, Room>();
 
   /** `onChange` hears about every change to a room, e.g. to persist it. */
-  constructor(private onChange: (room: Room) => void = () => {}) {}
+  constructor(
+    private onChange: (room: Room) => void = () => {},
+    /** Decides when bots speak up and what they say. */
+    private random: () => number = Math.random,
+  ) {}
 
   /** Puts rooms loaded from storage back into play. */
   restore(rooms: Room[]): void {
-    for (const room of rooms) this.rooms.set(room.id, room);
+    // Rooms saved before the message board existed have no chat yet.
+    for (const room of rooms) this.rooms.set(room.id, { ...room, chat: room.chat ?? [] });
   }
 
   all(): Room[] {
@@ -93,6 +102,7 @@ export class RoomManager {
       seats: { [host]: seat },
       plan: {},
       state: createGame({ variant: variant as VariantId }),
+      chat: [],
       lastActivity: Date.now(),
     };
     others.forEach((color, i) => this.assign(room, color, (plans as SeatPlan[])[i] ?? "friend"));
@@ -149,16 +159,29 @@ export class RoomManager {
 
   move(roomId: unknown, color: PlayerColor | null, move: MoveInput): Room {
     const room = this.playing(roomId, color);
+    const before = room.state;
     // The engine rejects anything that isn't this seat's turn or isn't a legal move.
     room.state = applyMove(room.state, { from: move.from, to: move.to, promotion: move.promotion, player: color! });
-    this.afterChange(room);
+    this.afterChange(room, before);
     return room;
   }
 
   resign(roomId: unknown, color: PlayerColor | null): Room {
     const room = this.playing(roomId, color);
+    const before = room.state;
     room.state = resign(room.state, color!);
-    this.afterChange(room);
+    this.afterChange(room, before);
+    return room;
+  }
+
+  /** Posts to the message board as the seat `color`, or as a spectator called `name` when `color` is null. */
+  say(roomId: unknown, color: PlayerColor | null, name: unknown, text: unknown): Room {
+    const room = this.get(roomId);
+    const clean = typeof text === "string" ? text.trim().slice(0, MAX_CHAT_LENGTH) : "";
+    if (!clean) throw new RoomError("Say something first");
+    const seat = color && room.seats[color];
+    this.post(room, { name: seat ? seat.name : cleanName(name), color: seat ? color : null, bot: false, text: clean });
+    this.touch(room);
     return room;
   }
 
@@ -191,6 +214,7 @@ export class RoomManager {
       seats,
       plan: { ...room.plan },
       state: room.state,
+      chat: room.chat,
     };
   }
 
@@ -202,6 +226,8 @@ export class RoomManager {
   private begin(room: Room): void {
     room.state = room.players.filter((c) => !room.seats[c]).reduce((state, c) => resign(state, c), room.state);
     room.phase = "playing";
+    const greeter = room.players.find((c) => room.seats[c]?.bot);
+    if (greeter) this.post(room, this.botLine(room, greeter, GREETINGS[Math.floor(this.random() * GREETINGS.length)]!));
     this.touch(room);
   }
 
@@ -224,9 +250,23 @@ export class RoomManager {
     return room;
   }
 
-  private afterChange(room: Room): void {
+  private afterChange(room: Room, before: GameState): void {
     if (room.state.status === "finished") room.phase = "finished";
+    const isBot = (c: PlayerColor) => Boolean(room.seats[c]?.bot);
+    const who = (c: PlayerColor) => room.seats[c]?.name ?? c;
+    for (const remark of banter(before, room.state, isBot, who, this.random)) {
+      this.post(room, this.botLine(room, remark.color, remark.text));
+    }
     this.touch(room);
+  }
+
+  private botLine(room: Room, color: PlayerColor, text: string): Omit<ChatMessage, "id" | "at"> {
+    return { name: room.seats[color]?.name ?? color, color, bot: true, text };
+  }
+
+  private post(room: Room, message: Omit<ChatMessage, "id" | "at">): void {
+    room.chat.push({ ...message, id: (room.chat.at(-1)?.id ?? 0) + 1, at: Date.now() });
+    if (room.chat.length > CHAT_KEPT) room.chat.splice(0, room.chat.length - CHAT_KEPT);
   }
 
   private touch(room: Room): void {

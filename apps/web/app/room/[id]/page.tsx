@@ -1,15 +1,18 @@
 "use client";
 
-import { BOT_LEVELS, chooseBotMove, type BotLevel, type PlayerColor } from "@fourman/game-engine";
+import { BOT_LEVELS, chooseBotMove, createGame, getVariant, type BotLevel, type PlayerColor } from "@fourman/game-engine";
 import type { RoomView, SeatPlan } from "@fourman/shared";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Board } from "../../../components/Board";
+import { Chat } from "../../../components/Chat";
 import { Segmented, ThemePicker } from "../../../components/Controls";
 import { MoveLog } from "../../../components/MoveLog";
 import { PlayerPlate } from "../../../components/PlayerPlate";
 import { SeatPlanner } from "../../../components/SeatPlanner";
+import { Standings } from "../../../components/Standings";
+import { useHints } from "../../../lib/hints";
 import { useLocalSetting } from "../../../lib/settings";
 import { getSocket, loadName, saveName } from "../../../lib/socket";
 import { BOARD_THEME_IDS, BOT_LEVEL_INFO, themeById, type BoardThemeId } from "../../../lib/themes";
@@ -19,6 +22,9 @@ import { VARIANT_INFO } from "../../../lib/variants";
 const AUTO_DELAY_MS = 800;
 const LEVEL_OPTIONS = BOT_LEVELS.map((l) => ({ value: l, label: BOT_LEVEL_INFO[l].name }));
 const label = (c: PlayerColor) => c[0]!.toUpperCase() + c.slice(1);
+const ON_OFF = ["on", "off"] as const;
+/** Stands in for the game until the room arrives, so hooks run in the same order every render. */
+const EMPTY_STATE = createGame();
 
 export default function RoomPage() {
   const { id } = useParams<{ id: string }>();
@@ -67,12 +73,15 @@ function TopBar({ children }: { children?: ReactNode }) {
 }
 
 function Room({ id, name }: { id: string; name: string }) {
-  const { room, color, connected, error, move, start, resign } = useRoom(id, name);
+  const { room, color, connected, error, move, start, resign, say } = useRoom(id, name);
   const [copied, setCopied] = useState(false);
   const [auto, setAuto] = useState(false);
   const [autoLevel, setAutoLevel] = useLocalSetting<BotLevel>("fourman:auto-level", "hard", BOT_LEVELS);
   const [themeId, setThemeId] = useLocalSetting<BoardThemeId>("fourman:board-theme", "classic", BOARD_THEME_IDS);
   const [hostError, setHostError] = useState<string | null>(null);
+  const [hintSetting, setHintSetting] = useLocalSetting<"on" | "off">("fourman:hints", "off", ON_OFF);
+  const hintsOn = hintSetting === "on";
+  const hints = useHints(room?.state ?? EMPTY_STATE, color, hintsOn && room?.phase === "playing");
 
   // Auto mode: when it's our turn, the bot picks and sends the move for us.
   const myTurnAtPly = room?.phase === "playing" && color === room.state.currentPlayer ? room.state.ply : null;
@@ -103,6 +112,9 @@ function Room({ id, name }: { id: string; name: string }) {
   }
 
   const { state, players } = room;
+  const who = (c: PlayerColor) => room.seats[c]?.name ?? label(c);
+  const suggestion = hints.suggestion;
+  const victim = suggestion?.capture ? state.board[getVariant(state.variant).indexOf(suggestion.to)]?.color : undefined;
   const out = new Set(state.eliminations.map((e) => e.player));
   const isHost = color === room.host;
   const myTurn = room.phase === "playing" && color === state.currentPlayer;
@@ -154,7 +166,9 @@ function Room({ id, name }: { id: string; name: string }) {
 
       <main className="game">
         <section className="board-area">
-          <Board state={state} perspective={perspective} theme={themeById(themeId)} playable={myTurn ? color : null} onMove={(m) => void move(m)} plates={plates} />
+          <Board state={state} perspective={perspective} theme={themeById(themeId)} playable={myTurn ? color : null} onMove={(m) => void move(m)} plates={plates}
+            hints={hintsOn ? { move: suggestion, danger: hints.danger } : undefined}
+          />
         </section>
 
         <aside className="sidebar">
@@ -163,6 +177,9 @@ function Room({ id, name }: { id: string; name: string }) {
             <p>{statusLine(room, color)}</p>
           </div>
           {(error || hostError) && <p className="error">{error ?? hostError}</p>}
+          {room.phase === "finished" && (
+            <Link href="/leaderboard" className="button wide">See the leaderboard</Link>
+          )}
 
           {room.phase === "lobby" && (
             <div className="block">
@@ -191,6 +208,41 @@ function Room({ id, name }: { id: string; name: string }) {
             </div>
           )}
 
+          {room.phase === "playing" && color && !out.has(color) && (
+            <div className="block">
+              <h2 className="label">Hints</h2>
+              <label className="toggle">
+                <input type="checkbox" checked={hintsOn} onChange={(e) => setHintSetting(e.target.checked ? "on" : "off")} />
+                <span>{hintsOn ? "On: a suggested move and pieces in danger are marked" : "Off: turn on for coaching while you learn"}</span>
+              </label>
+              {hintsOn && (
+                <div className="hint-card">
+                  {hints.inCheck && <p><strong>You're in check.</strong> Move your king, block the attack, or take the attacker.</p>}
+                  {suggestion ? (
+                    <>
+                      <p>
+                        <span className="hint-key from" /> <span className="hint-key to" /> Try your <strong>{suggestion.piece}</strong> {suggestion.from} → {suggestion.to}
+                        {suggestion.capture && <>, taking {victim ? `${who(victim)}'s` : "a"} {suggestion.capture}</>}
+                        {suggestion.castle && <> (castling {suggestion.castle})</>}.
+                      </p>
+                      <button type="button" className="tiny" onClick={() => void move({ from: suggestion.from, to: suggestion.to, ...(suggestion.promotion && { promotion: suggestion.promotion }) })}>
+                        Play it
+                      </button>
+                    </>
+                  ) : (
+                    <p className="muted">A suggested move appears on your turn.</p>
+                  )}
+                  {hints.danger.size > 0 && (
+                    <p>
+                      <span className="hint-key danger" /> {hints.danger.size === 1 ? "1 of your pieces" : `${hints.danger.size} of your pieces`} could be taken next turn. Move or guard {hints.danger.size === 1 ? "it" : "them"}.
+                    </p>
+                  )}
+                  <p className="muted">Tap any of your pieces to see where it can go.</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {room.phase !== "lobby" && color && !out.has(color) && room.phase === "playing" && (
             <div className="block">
               <h2 className="label">Auto mode</h2>
@@ -203,6 +255,18 @@ function Room({ id, name }: { id: string; name: string }) {
             </div>
           )}
           {color === null && <p className="blurb">You're watching. The room was full or already under way.</p>}
+
+          {room.phase !== "lobby" && (
+            <div className="block">
+              <h2 className="label">Standings</h2>
+              <Standings room={room} />
+            </div>
+          )}
+
+          <div className="block">
+            <h2 className="label">Table talk</h2>
+            <Chat messages={room.chat ?? []} color={color} onSend={say} />
+          </div>
 
           <div className="block">
             <h2 className="label">Board theme</h2>

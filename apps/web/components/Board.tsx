@@ -32,6 +32,13 @@ interface BoardProps {
   onMove?: (move: MoveInput) => void;
   /** Name plates by colour; each board places them beside that army. */
   plates?: Partial<Record<PlayerColor, ReactNode>>;
+  /** Coaching marks: a suggested move and our pieces that could be taken. */
+  hints?: BoardHints;
+}
+
+export interface BoardHints {
+  move: { from: string; to: string } | null;
+  danger: ReadonlySet<string>;
 }
 
 /** Seats counted clockwise from the bottom, starting with `perspective`. */
@@ -42,7 +49,7 @@ export function seatsFrom(variant: Variant, perspective: PlayerColor): PlayerCol
 }
 
 /** Selection, legal targets and highlights shared by every board shape. */
-function useBoardState(state: GameState, playable: PlayerColor | null, onMove?: (move: MoveInput) => void) {
+function useBoardState(state: GameState, playable: PlayerColor | null, onMove?: (move: MoveInput) => void, hints?: BoardHints) {
   const [selected, setSelected] = useState<string | null>(null);
   // Any new position from the server clears a stale selection.
   useEffect(() => setSelected(null), [state.ply, state.eliminations.length]);
@@ -56,15 +63,28 @@ function useBoardState(state: GameState, playable: PlayerColor | null, onMove?: 
     return new Set(getVariant(state.variant).players.filter((c) => active.includes(c) && isInCheck(state, c)));
   }, [state]);
   const last = state.history.at(-1);
+  // One move back per seat: each army's latest move, outlined in its colour. Newer moves win shared squares.
+  const trail = useMemo(() => {
+    const squares = new Map<string, PlayerColor>();
+    for (const record of state.history.slice(-getVariant(state.variant).players.length)) {
+      squares.set(record.from, record.player);
+      squares.set(record.to, record.player);
+    }
+    return squares;
+  }, [state]);
 
   const classesFor = (square: string, piece: Piece | null, light: boolean) =>
     [
       light ? "light" : "dark",
       square === selected && "selected",
       (square === last?.from || square === last?.to) && "last",
+      trail.has(square) && `trace trace-${trail.get(square)}`,
       targets.has(square) && (piece ? "target capture" : "target"),
       piece?.type === "king" && checkedKings.has(piece.color) && "check",
       piece?.color === playable && "mine",
+      square === hints?.move?.from && "hint-from",
+      square === hints?.move?.to && "hint-to",
+      hints?.danger.has(square) && "danger",
     ].filter(Boolean) as string[];
 
   const click = (square: string, piece: Piece | null) => {
@@ -98,8 +118,8 @@ export function Board(props: BoardProps) {
 
 /* ---------- 2- and 4-player grids ---------- */
 
-function GridBoard({ state, perspective, theme, playable = null, onMove, plates = {}, variant }: BoardProps & { variant: Variant }) {
-  const { classesFor, click } = useBoardState(state, playable, onMove);
+function GridBoard({ state, perspective, theme, playable = null, onMove, plates = {}, hints, variant }: BoardProps & { variant: Variant }) {
+  const { classesFor, click } = useBoardState(state, playable, onMove, hints);
   if (variant.layout.kind !== "grid") return null;
   const { width, height, coords } = variant.layout;
   const seats = seatsFrom(variant, perspective);
@@ -197,8 +217,8 @@ function quadrant(theta: number, right: boolean): [Point, Point, Point, Point] {
     : [polar(theta - 30, RADIUS), polar(theta, MID), centre, polar(theta - 60, MID)];
 }
 
-function HexBoard({ state, perspective, theme, playable = null, onMove, plates = {}, variant }: BoardProps & { variant: Variant }) {
-  const { classesFor, click } = useBoardState(state, playable, onMove);
+function HexBoard({ state, perspective, theme, playable = null, onMove, plates = {}, hints, variant }: BoardProps & { variant: Variant }) {
+  const { classesFor, click } = useBoardState(state, playable, onMove, hints);
   const geometry = useMemo(() => {
     if (variant.layout.kind !== "hex") return [];
     const bottom = Math.max(0, variant.players.indexOf(perspective));

@@ -201,4 +201,65 @@ describe("multiplayer sockets", () => {
     expect(await host.emitWithAck("game:start", { roomId: created.roomId })).toEqual({ ok: true });
     expect((await started).state.eliminations.map((e) => e.player)).toEqual(["yellow", "green"]);
   });
+
+  it("shares chat with everyone in the room, spectators included", async () => {
+    const { roomId, sockets } = await fullRoom();
+    const watcher = await client();
+    await watcher.emitWithAck("room:join", { roomId, name: "Cy" });
+    const heard = nextUpdate(sockets[3]!, (room) => room.chat.length === 2);
+    expect(await sockets[0]!.emitWithAck("chat:send", { roomId, text: "  hello  " })).toEqual({ ok: true });
+    expect(await watcher.emitWithAck("chat:send", { roomId, text: "hi from the stands" })).toEqual({ ok: true });
+    expect((await heard).chat).toMatchObject([
+      { name: "Ada", color: "red", bot: false, text: "hello" },
+      { name: "Cy", color: null, bot: false, text: "hi from the stands" },
+    ]);
+  });
+
+  it("rejects empty chat, flooding and chat from outside the room", async () => {
+    const { roomId, sockets } = await fullRoom();
+    const outsider = await client();
+    expect(await sockets[0]!.emitWithAck("chat:send", { roomId, text: "   " })).toMatchObject({ ok: false });
+    expect(await outsider.emitWithAck("chat:send", { roomId, text: "hi" })).toMatchObject({ ok: false });
+    expect(await sockets[1]!.emitWithAck("chat:send", { roomId, text: "one" })).toEqual({ ok: true });
+    expect(await sockets[1]!.emitWithAck("chat:send", { roomId, text: "two" })).toMatchObject({ ok: false });
+  });
+
+  it("has server bots greet the table and sign off when they're out", async () => {
+    const host = await client();
+    const created = await host.emitWithAck("room:create", { name: "Ada", seats: ["easy", "hard", "advanced"] });
+    if (!created.ok) throw new Error(created.error);
+    const done = nextUpdate(host, (room) => room.phase === "finished");
+    expect(await host.emitWithAck("game:resign", { roomId: created.roomId })).toEqual({ ok: true });
+    const room = await done;
+    expect(room.chat[0]).toMatchObject({ bot: true, color: "blue" });
+    expect(room.chat.every((m) => m.bot)).toBe(true);
+    const winner = room.state.winner!;
+    expect(room.chat.some((m) => m.color === winner)).toBe(true);
+  }, 30_000);
+
+  it("ranks finished games on the leaderboard, one row per bot level", async () => {
+    const [host, other, reader] = await Promise.all([client(), client(), client()]);
+    const play = async (socket: Client, name: string, seats: ("hard" | "easy")[]) => {
+      const created = await socket.emitWithAck("room:create", { name, variant: "two", seats });
+      if (!created.ok) throw new Error(created.error);
+      const done = nextUpdate(socket, (room) => room.phase === "finished");
+      await socket.emitWithAck("game:resign", { roomId: created.roomId });
+      await done;
+    };
+    await play(host, "Ada", ["hard"]);
+    await play(other, "ada ", ["hard"]);
+    await play(other, "Bo", ["easy"]);
+
+    const reply = await reader.emitWithAck("leaderboard:get", { period: "day" });
+    if (!reply.ok) throw new Error(reply.error);
+    expect(reply.board.rows.map((r) => [r.name, r.wins, r.games])).toEqual([
+      ["Hard Bot", 2, 2],
+      ["Easy Bot", 1, 1],
+      ["ada", 0, 2], // same person, shown with the latest spelling
+      ["Bo", 0, 1],
+    ]);
+    expect(reply.board.recent).toHaveLength(3);
+    expect(reply.board.recent[0]).toMatchObject({ winner: "bot:easy", variant: "two" });
+    expect(await reader.emitWithAck("leaderboard:get", { period: "year" as never })).toMatchObject({ ok: false });
+  });
 });

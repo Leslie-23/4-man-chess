@@ -2,6 +2,7 @@
 
 import { VARIANT_IDS, getVariant, type PlayerColor, type VariantId } from "@fourman/game-engine";
 import type { SeatPlan } from "@fourman/shared";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BoardSlides } from "../components/BoardSlides";
@@ -62,6 +63,7 @@ export default function Opener() {
       <header className="topbar">
         <span className="wordmark">4-Man Chess</span>
         <span className="topbar-note">2, 3 or 4 players · friends or bots</span>
+        <Link href="/leaderboard" className="topbar-link">Leaderboard</Link>
       </header>
 
       <main>

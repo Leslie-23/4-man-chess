@@ -1,16 +1,22 @@
 import { IllegalMoveError, chooseBotMove, type MoveInput, type PlayerColor } from "@fourman/game-engine";
-import type { AckResult, ClientToServerEvents, ServerToClientEvents } from "@fourman/shared";
+import { LEADERBOARD_PERIODS, type AckResult, type ClientToServerEvents, type LeaderboardPeriod, type ServerToClientEvents } from "@fourman/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Server, Socket } from "socket.io";
+import type { Leaderboard } from "./leaderboard.js";
 import { RoomError, type Room, type RoomManager } from "./rooms.js";
 
 interface SocketData {
   roomId?: string;
   color?: PlayerColor | null;
+  /** The name given on join, used when a spectator chats. */
+  name?: string;
 }
 
 export type GameServer = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+
+/** A socket may post at most this often. */
+const CHAT_GAP_MS = 500;
 
 const PROMOTIONS = new Set(["queen", "rook", "bishop", "knight"]);
 
@@ -24,6 +30,7 @@ function parseMove(value: unknown): MoveInput {
 export interface SocketOptions {
   /** Pause before a bot moves, so humans can follow along. */
   botDelayMs: number;
+  leaderboard: Leaderboard;
 }
 
 /** Wires up the socket events. Returns a function that lets a bot move in `room` if it's a bot's turn. */
@@ -58,6 +65,8 @@ export function attachSockets(io: GameServer, rooms: RoomManager, log: FastifyBa
   };
 
   io.on("connection", (socket: GameSocket) => {
+    let lastChat = 0;
+
     /**
      * Runs a client request: replies through `ack`, then pushes the new room
      * state to every socket in the room, so all devices redraw together.
@@ -95,9 +104,9 @@ export function attachSockets(io: GameServer, rooms: RoomManager, log: FastifyBa
       }
     };
 
-    const enter = (room: Room, color: PlayerColor | null) => {
+    const enter = (room: Room, color: PlayerColor | null, name: unknown) => {
       leaveCurrentRoom();
-      socket.data = { roomId: room.id, color };
+      socket.data = { roomId: room.id, color, ...(typeof name === "string" && { name }) };
       void socket.join(room.id);
       rooms.connect(room, color, 1);
     };
@@ -105,7 +114,7 @@ export function attachSockets(io: GameServer, rooms: RoomManager, log: FastifyBa
     socket.on("room:create", (payload, ack) =>
       handle(ack, () => {
         const { room, color, token } = rooms.create(payload?.name, payload?.variant, payload?.seats);
-        enter(room, color);
+        enter(room, color, payload?.name);
         return { room, reply: { roomId: room.id, color, token } };
       }),
     );
@@ -113,7 +122,7 @@ export function attachSockets(io: GameServer, rooms: RoomManager, log: FastifyBa
     socket.on("room:join", (payload, ack) =>
       handle(ack, () => {
         const { room, color, token } = rooms.join(payload?.roomId, payload?.name, payload?.token);
-        enter(room, color);
+        enter(room, color, payload?.name);
         return { room, reply: { roomId: room.id, color, token } };
       }),
     );
@@ -134,6 +143,24 @@ export function attachSockets(io: GameServer, rooms: RoomManager, log: FastifyBa
     socket.on("game:resign", (payload, ack) =>
       handle(ack, () => ({ room: rooms.resign(payload?.roomId, seatIn(payload?.roomId)) })),
     );
+
+    socket.on("chat:send", (payload, ack) =>
+      handle(ack, () => {
+        const color = seatIn(payload?.roomId);
+        const now = Date.now();
+        if (now - lastChat < CHAT_GAP_MS) throw new RoomError("Slow down a little");
+        lastChat = now;
+        return { room: rooms.say(payload?.roomId, color, socket.data.name, payload?.text) };
+      }),
+    );
+
+    // Read-only and not tied to a room, so it skips `handle` and its broadcast.
+    socket.on("leaderboard:get", (payload, ack) => {
+      if (typeof ack !== "function") return;
+      const period = payload?.period;
+      if (!LEADERBOARD_PERIODS.includes(period as LeaderboardPeriod)) return ack({ ok: false, error: "Unknown period" });
+      ack({ ok: true, board: options.leaderboard.view(period) });
+    });
 
     socket.on("disconnect", leaveCurrentRoom);
 

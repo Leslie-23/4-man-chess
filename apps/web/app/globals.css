@@ -292,6 +292,15 @@ input::placeholder {
   text-transform: uppercase;
   color: var(--muted);
 }
+.topbar-link {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: inherit;
+  text-underline-offset: 3px;
+}
 .room-chip {
   display: flex;
   align-items: center;
@@ -478,6 +487,360 @@ input::placeholder {
   width: 9px;
   height: 9px;
 }
+.muted {
+  color: var(--muted);
+}
+.hint-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: var(--hair);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.hint-card p {
+  margin: 0;
+}
+.hint-key {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+  border: 2px solid var(--ink);
+}
+.hint-key.from { border-style: dashed; }
+.hint-key.danger {
+  border: 0;
+  background: linear-gradient(225deg, var(--danger) 50%, transparent 50%);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: 220px;
+  overflow-y: auto;
+  border: var(--hair);
+  font-size: 0.86rem;
+}
+.chat-list > li {
+  padding: 6px 8px;
+}
+.chat-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border-bottom: var(--hair);
+}
+.chat-line:last-child {
+  border-bottom: 0;
+}
+.chat-line.mine {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.chat-line .swatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
+}
+.swatch.spectator {
+  background: transparent;
+  border-style: dashed;
+}
+.chat-body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  align-items: baseline;
+}
+.chat-tag,
+.chat-time {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.chat-text {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+.chat .inline input {
+  min-width: 0;
+}
+.chat .inline button {
+  flex: none;
+}
+
+/* ---------- Standings ---------- */
+
+.standings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.standings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--hair);
+  font-size: 0.88rem;
+}
+.standings-list li {
+  display: grid;
+  grid-template-columns: 1.4em 14px minmax(0, 1fr) auto 3.2em;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: var(--hair);
+}
+.standings-list li:last-child {
+  border-bottom: 0;
+}
+.standings-list li.out {
+  color: var(--muted);
+}
+.standings-place {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.standings-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.standings-stat {
+  font-family: var(--mono);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.standings-legend {
+  margin: 0;
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+/* A short stroke keys each army in lists and tooltips; white and black get an ink edge. */
+.line-key {
+  display: inline-block;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--army, var(--ink));
+}
+.line-key.white,
+.line-key.black {
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.red { --army: var(--red); }
+.blue { --army: var(--blue); }
+.yellow { --army: var(--yellow); }
+.green { --army: var(--green); }
+.white { --army: var(--white); }
+.black { --army: var(--black); }
+
+.chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chart-frame {
+  position: relative;
+}
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+}
+.chart svg:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.chart-grid {
+  stroke: color-mix(in srgb, var(--ink) 14%, var(--paper));
+  stroke-width: 1;
+}
+.chart-tick {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--muted);
+}
+.chart-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.chart-line,
+.chart-casing {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-line {
+  stroke: var(--army);
+  stroke-width: 2;
+}
+.chart-casing {
+  stroke: var(--ink);
+  stroke-width: 4;
+}
+.chart-dot {
+  fill: var(--army);
+  stroke: var(--paper);
+  stroke-width: 2;
+}
+.chart-dot.white {
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+.chart-tip {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  background: var(--paper);
+  border: var(--hair);
+  font-size: 0.74rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.chart-tip[data-side="right"] {
+  transform: translateX(10px);
+}
+.chart-tip[data-side="left"] {
+  transform: translateX(calc(-100% - 10px));
+}
+.chart-tip-head {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-tip-row strong {
+  font-family: var(--mono);
+  min-width: 2ch;
+  text-align: right;
+}
+
+/* ---------- Leaderboard ---------- */
+
+.leaderboard {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.leaderboard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.leaderboard-head h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+.leaderboard-head .segmented {
+  min-width: min(360px, 100%);
+}
+.leader-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 1.3rem;
+}
+.ranking {
+  width: 100%;
+  border-collapse: collapse;
+  border: var(--rule);
+  font-size: 0.92rem;
+}
+.ranking th {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  background: var(--ink);
+  color: var(--paper);
+}
+.ranking th,
+.ranking td {
+  padding: 9px 12px;
+  border-bottom: var(--hair);
+}
+.ranking .num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ranking tbody tr:first-child td {
+  font-weight: 700;
+}
+.log.recent {
+  max-height: none;
+  font-size: 0.8rem;
+}
+.log.recent li {
+  flex-wrap: wrap;
+}
+.recent-players {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.recent-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.recent-player .swatch {
+  width: 9px;
+  height: 9px;
+}
+.recent-player.won {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .ranking th:nth-child(6),
+  .ranking td:nth-child(6) {
+    display: none;
+  }
+  .ranking th,
+  .ranking td {
+    padding: 8px;
+  }
+}
+
 .small-text {
   font-size: 0.85rem;
   margin: 0;
@@ -528,8 +891,21 @@ input::placeholder {
 .cell.target {
   cursor: pointer;
 }
+/* Move trail: each army's latest move ringed in its colour, with a thin ink edge so white shows on light squares. */
+.trace-red { --trace: var(--red); }
+.trace-blue { --trace: var(--blue); }
+.trace-yellow { --trace: var(--yellow); }
+.trace-green { --trace: var(--green); }
+.trace-white { --trace: var(--white); }
+.trace-black { --trace: var(--black); }
+.cell.trace {
+  box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 0 4px var(--trace);
+}
 .cell.last {
   box-shadow: inset 0 0 0 100vmax var(--sq-last);
+}
+.cell.trace.last {
+  box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 0 4px var(--trace), inset 0 0 0 100vmax var(--sq-last);
 }
 .cell.selected {
   box-shadow: inset 0 0 0 100vmax var(--sq-selected);
@@ -549,6 +925,24 @@ input::placeholder {
   height: 84%;
   background: none;
   border: 3px solid var(--sq-hint);
+}
+/* Hints: the suggested move is dashed, hanging pieces get a red corner. */
+.cell.hint-from,
+.cell.hint-to {
+  outline: 3px dashed var(--ink);
+  outline-offset: -6px;
+}
+.cell.hint-to {
+  outline-style: solid;
+}
+.cell.danger::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: 0.9cqi solid var(--danger);
+  border-bottom-color: transparent;
+  border-left-color: transparent;
 }
 .board-wrap.static .cell {
   cursor: default;
@@ -724,7 +1118,18 @@ input::placeholder {
   fill: transparent;
   pointer-events: none;
 }
+.hex-cell.trace .hex-tint {
+  stroke: var(--trace);
+  stroke-width: 0.014;
+}
 .hex-cell.last .hex-tint { fill: var(--sq-last); }
+.hex-cell.hint-from .hex-tint,
+.hex-cell.hint-to .hex-tint {
+  stroke: var(--ink);
+  stroke-width: 0.012;
+}
+.hex-cell.hint-from .hex-tint { stroke-dasharray: 0.02 0.015; }
+.hex-cell.danger .hex-fill { fill: color-mix(in srgb, var(--danger) 45%, var(--sq-light)); }
 .hex-cell.selected .hex-tint { fill: var(--sq-selected); }
 .hex-cell.check .hex-tint { fill: rgb(215 54 45 / 0.75); }
 .hex-cell.target.capture .hex-tint {

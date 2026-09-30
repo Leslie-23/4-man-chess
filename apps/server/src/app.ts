@@ -1,5 +1,6 @@
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { Server } from "socket.io";
+import { Leaderboard } from "./leaderboard.js";
 import { RoomManager } from "./rooms.js";
 import { attachSockets, type GameServer } from "./sockets.js";
 import { MemoryStore, type RoomStore } from "./store.js";
@@ -14,15 +15,20 @@ const withScheme = (origin: string) => (/^https?:\/\//.test(origin) ? origin : `
 export function buildServer(options: FastifyServerOptions & { botDelayMs?: number; store?: RoomStore } = {}) {
   const { botDelayMs = Number(process.env.BOT_DELAY_MS ?? 700), store = new MemoryStore(), ...fastifyOptions } = options;
   const app = Fastify(fastifyOptions);
-  const rooms = new RoomManager((room) => store.save(room));
+  const leaderboard = new Leaderboard((game) => store.saveResult(game));
+  const rooms = new RoomManager((room) => {
+    store.save(room);
+    leaderboard.record(room);
+  });
   const io: GameServer = new Server(app.server, {
     // Comma-separated allow-list in production; any origin in development so phones on the LAN can connect.
     cors: { origin: process.env.CORS_ORIGIN?.split(",").map((o) => withScheme(o.trim())) ?? true },
   });
-  const resumeBots = attachSockets(io, rooms, app.log, { botDelayMs });
+  const resumeBots = attachSockets(io, rooms, app.log, { botDelayMs, leaderboard });
 
   /** Loads unfinished games from the store and lets any bot whose turn it is carry on. */
   const restore = async () => {
+    leaderboard.load(await store.loadResults());
     const saved = await store.loadActive(RESUME_MS);
     rooms.restore(saved);
     saved.forEach(resumeBots);
@@ -38,5 +44,5 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
   });
   app.addHook("onClose", async () => store.close());
 
-  return { app, io, rooms, restore };
+  return { app, io, rooms, leaderboard, restore };
 }

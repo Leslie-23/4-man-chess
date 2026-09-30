@@ -61,5 +61,7 @@ export function useRoom(roomId: string, name: string | null) {
     move: (move: MoveInput) => send(getSocket().emitWithAck("game:move", { roomId: id, move })),
     start: () => send(getSocket().emitWithAck("game:start", { roomId: id })),
     resign: () => send(getSocket().emitWithAck("game:resign", { roomId: id })),
+    /** Chat replies go back to the caller, so the message box can show its own errors. */
+    say: (text: string): Promise<AckResult> => getSocket().emitWithAck("chat:send", { roomId: id, text }),
   };
 }

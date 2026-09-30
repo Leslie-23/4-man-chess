@@ -9,6 +9,19 @@ export interface SeatView {
   bot: BotLevel | null;
 }
 
+/** One line on the room's message board. `color` is null for spectators. */
+export interface ChatMessage {
+  id: number;
+  name: string;
+  color: PlayerColor | null;
+  bot: boolean;
+  text: string;
+  /** Epoch milliseconds. */
+  at: number;
+}
+
+export const MAX_CHAT_LENGTH = 200;
+
 export type RoomPhase = "lobby" | "playing" | "finished";
 
 /** Who a seat is for: a friend joining with the room code, or a bot at some level. */
@@ -25,6 +38,42 @@ export interface RoomView {
   seats: Partial<Record<PlayerColor, SeatView | null>>;
   plan: Partial<Record<PlayerColor, SeatPlan>>;
   state: GameState;
+  /** Latest messages, oldest first. */
+  chat: ChatMessage[];
+}
+
+/** Window a leaderboard covers, counting back from now. */
+export type LeaderboardPeriod = "day" | "week" | "all";
+export const LEADERBOARD_PERIODS: readonly LeaderboardPeriod[] = ["day", "week", "all"];
+
+/**
+ * One entrant on the leaderboard. People are grouped by name (there are no
+ * accounts); the server's bots are grouped by level, whatever seat they took.
+ */
+export interface LeaderboardRow {
+  key: string;
+  name: string;
+  bot: BotLevel | null;
+  games: number;
+  wins: number;
+  /** Epoch milliseconds of their latest finished game in the period. */
+  lastPlayed: number;
+}
+
+/** A finished game, newest first on the leaderboard page. */
+export interface RecentGame {
+  id: string;
+  variant: VariantId;
+  finishedAt: number;
+  /** Entrant key of the winner; null for a draw. */
+  winner: string | null;
+  players: { key: string; name: string; bot: BotLevel | null; color: PlayerColor }[];
+}
+
+export interface LeaderboardView {
+  period: LeaderboardPeriod;
+  rows: LeaderboardRow[];
+  recent: RecentGame[];
 }
 
 export type AckResult<T = {}> = ({ ok: true } & T) | { ok: false; error: string };
@@ -52,6 +101,10 @@ export interface ClientToServerEvents {
   "game:start": (payload: { roomId: string }, ack: Ack) => void;
   "game:move": (payload: { roomId: string; move: MoveInput }, ack: Ack) => void;
   "game:resign": (payload: { roomId: string }, ack: Ack) => void;
+  /** Posts to the room's message board; players and spectators alike. */
+  "chat:send": (payload: { roomId: string; text: string }, ack: Ack) => void;
+  /** Wins and games per entrant over `period`, plus the latest finished games. No room needed. */
+  "leaderboard:get": (payload: { period: LeaderboardPeriod }, ack: Ack<{ board: LeaderboardView }>) => void;
 }
 
 export interface ServerToClientEvents {

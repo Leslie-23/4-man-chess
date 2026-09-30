@@ -1,5 +1,5 @@
 import type { AddressInfo } from "node:net";
-import type { ClientToServerEvents, RoomView, ServerToClientEvents } from "@fourman/shared";
+import type { ClientToServerEvents, RecentGame, RoomView, ServerToClientEvents } from "@fourman/shared";
 import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "../src/app.js";
@@ -19,6 +19,13 @@ class JsonStore implements RoomStore {
   }
   save(room: Room): void {
     this.docs.set(room.id, JSON.stringify(room));
+  }
+  results = new Map<string, string>();
+  async loadResults(): Promise<RecentGame[]> {
+    return [...this.results.values()].map((r) => JSON.parse(r) as RecentGame);
+  }
+  saveResult(game: RecentGame): void {
+    this.results.set(game.id, JSON.stringify(game));
   }
   async close(): Promise<void> {}
 }
@@ -102,5 +109,25 @@ describe("persistence", () => {
     await new Promise((r) => setTimeout(r, 200));
     const resumed = second.server.rooms.get(created.roomId);
     expect(resumed.state.ply > plyBefore || resumed.phase === "finished").toBe(true);
+  });
+
+  it("keeps the leaderboard across a restart", async () => {
+    const store = new JsonStore();
+    const first = await start(store);
+    const host = await client(first.url);
+    const created = await host.emitWithAck("room:create", { name: "Ada", variant: "two", seats: ["hard"] });
+    if (!created.ok) throw new Error(created.error);
+    await host.emitWithAck("game:resign", { roomId: created.roomId });
+    host.disconnect();
+    await first.server.app.close();
+
+    const second = await start(store);
+    const reader = await client(second.url);
+    const reply = await reader.emitWithAck("leaderboard:get", { period: "all" });
+    if (!reply.ok) throw new Error(reply.error);
+    expect(reply.board.rows).toMatchObject([
+      { key: "bot:hard", wins: 1, games: 1 },
+      { key: "name:ada", wins: 0, games: 1 },
+    ]);
   });
 });
