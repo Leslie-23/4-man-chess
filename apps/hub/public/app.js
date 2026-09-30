@@ -54,7 +54,7 @@ const dice = [...document.querySelectorAll(".die")];
 const verdict = document.getElementById("verdict");
 const LINES = {
   chess: ["Four armies enter. One leaves.", "Chess, but everyone's your enemy.", "Sharpen those knights."],
-  monopoly: ["Monopoly's still being built, so it's chess tonight!", "The bank isn't open yet. Chess it is!"],
+  tycoon: ["Time to buy the street.", "Somebody's going bankrupt tonight.", "Hotels on Sapphire Point, anyone?"],
 };
 let rolling = false;
 document.getElementById("roll").addEventListener("click", () => {
@@ -76,15 +76,15 @@ document.getElementById("roll").addEventListener("click", () => {
 
 function land(total) {
   rolling = false;
-  // Only chess is open for now, so an even total teases Monopoly and an odd one picks chess.
-  const game = total % 2 === 0 && total !== 12 ? "monopoly" : "chess";
+  // Odd totals pick chess, even ones Tycoon.
+  const game = total % 2 === 1 ? "chess" : "tycoon";
   const lines = LINES[game];
   const line = lines[Math.floor(Math.random() * lines.length)];
   verdict.innerHTML = "";
   const strong = document.createElement("strong");
   strong.textContent = `You rolled ${total}.`;
   verdict.append(strong, ` ${line}`);
-  const card = document.querySelector(`.game[data-game="chess"]`);
+  const card = document.querySelector(`.game[data-game="${game}"]`);
   card.classList.add("picked");
   card.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
   burst(card);
@@ -146,7 +146,10 @@ for (const link of document.querySelectorAll(".game.live .play")) {
 /* ---------- Wake the table ---------- */
 // Free Render servers sleep when idle. Ping chess's web app and game server now,
 // so they're warm by the time someone picks a game. `no-cors`: we only need an answer, not its contents.
-const WAKE = { chess: ["https://fourman-web.onrender.com/", "https://fourman-server.onrender.com/health"] };
+const WAKE = {
+  chess: ["https://fourman-web.onrender.com/", "https://fourman-server.onrender.com/health"],
+  tycoon: ["https://lesliepaul-tycoon.onrender.com/", "https://fourman-server.onrender.com/health"],
+};
 for (const [game, urls] of Object.entries(WAKE)) {
   const status = document.querySelector(`.game[data-game="${game}"] [data-status]`);
   const text = status?.querySelector("[data-status-text]");
