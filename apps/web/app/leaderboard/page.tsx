@@ -4,6 +4,7 @@ import type { LeaderboardPeriod, LeaderboardView } from "@fourman/shared";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Segmented } from "../../components/Controls";
+import { TopBar } from "../../components/TopBar";
 import { getSocket } from "../../lib/socket";
 import { VARIANT_INFO } from "../../lib/variants";
 
@@ -54,10 +55,7 @@ export default function LeaderboardPage() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <Link href="/" className="wordmark">4-Man Chess</Link>
-        <span className="topbar-note">Leaderboard</span>
-      </header>
+      <TopBar leaderboard={false} />
 
       <main className="leaderboard">
         <div className="leaderboard-head">

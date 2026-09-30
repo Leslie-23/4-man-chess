@@ -15,9 +15,25 @@ export interface ChatMessage {
   name: string;
   color: PlayerColor | null;
   bot: boolean;
+  /** Set on the table's own notices (polls opening and closing, timeouts); `name` is then "Table". */
+  system?: boolean;
   text: string;
   /** Epoch milliseconds. */
   at: number;
+}
+
+/** Time-per-move choices a poll offers; null means no limit. */
+export const MOVE_TIME_OPTIONS: readonly (number | null)[] = [15, 30, 60, null];
+
+/** A vote among the seated people on how long each move may take. */
+export interface MovePoll {
+  id: number;
+  /** Who voted for what, by seat. */
+  votes: Partial<Record<PlayerColor, number | null>>;
+  /** The seats whose votes count: people, not bots. */
+  voters: PlayerColor[];
+  /** Milliseconds until the poll closes by itself. */
+  closesInMs: number;
 }
 
 export const MAX_CHAT_LENGTH = 200;
@@ -40,6 +56,13 @@ export interface RoomView {
   state: GameState;
   /** Latest messages, oldest first. */
   chat: ChatMessage[];
+  /** Seconds each move may take, as voted; null for no limit. */
+  moveSeconds: number | null;
+  /** Milliseconds left for the player to move, when there's a limit. Counted from when this view was sent. */
+  turnEndsInMs: number | null;
+  poll: MovePoll | null;
+  /** The coach (explanations written by a language model) is switched on for this server. */
+  coach: boolean;
 }
 
 /** Window a leaderboard covers, counting back from now. */
@@ -103,6 +126,11 @@ export interface ClientToServerEvents {
   "game:resign": (payload: { roomId: string }, ack: Ack) => void;
   /** Posts to the room's message board; players and spectators alike. */
   "chat:send": (payload: { roomId: string; text: string }, ack: Ack) => void;
+  /** Seated people only: opens a poll on time per move. One poll at a time. */
+  "poll:start": (payload: { roomId: string }, ack: Ack) => void;
+  "poll:vote": (payload: { roomId: string; seconds: number | null }, ack: Ack) => void;
+  /** Seated players only: a short plain-English read of the position and a move worth playing. */
+  "coach:ask": (payload: { roomId: string }, ack: Ack<{ advice: string }>) => void;
   /** Wins and games per entrant over `period`, plus the latest finished games. No room needed. */
   "leaderboard:get": (payload: { period: LeaderboardPeriod }, ack: Ack<{ board: LeaderboardView }>) => void;
 }

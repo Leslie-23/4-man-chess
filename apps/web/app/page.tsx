@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BoardSlides } from "../components/BoardSlides";
 import { Segmented, ThemePicker } from "../components/Controls";
 import { SeatPlanner, describePlan } from "../components/SeatPlanner";
+import { TopBar } from "../components/TopBar";
 import { useLocalSetting } from "../lib/settings";
 import { getSocket, loadName, saveName, saveToken } from "../lib/socket";
 import { BOARD_THEME_IDS, themeById, type BoardThemeId } from "../lib/themes";
@@ -60,11 +61,9 @@ export default function Opener() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <span className="wordmark">4-Man Chess</span>
+      <TopBar>
         <span className="topbar-note">2, 3 or 4 players · friends or bots</span>
-        <Link href="/leaderboard" className="topbar-link">Leaderboard</Link>
-      </header>
+      </TopBar>
 
       <main>
         <div className="opener">
@@ -113,10 +112,16 @@ export default function Opener() {
             </form>
 
             <div className="block">
-              <h2 className="label">03 · Board theme</h2>
+              <h2 className="label">03 · Leaderboard</h2>
+              <p className="blurb">Who's winning, people and bots, over the last day, week or all time.</p>
+              <Link href="/leaderboard" className="button wide">See who's winning</Link>
+            </div>
+
+            <details className="block fold">
+              <summary className="label">04 · Board theme</summary>
               <ThemePicker value={themeId} onChange={setThemeId} />
               <p className="blurb">Saved on this device only. Your friends keep their own.</p>
-            </div>
+            </details>
 
             {error && <p className="error">{error}</p>}
           </section>

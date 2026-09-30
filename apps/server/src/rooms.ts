@@ -3,6 +3,7 @@ import {
   BOT_LEVELS,
   VARIANT_IDS,
   applyMove,
+  chooseBotMove,
   createGame,
   getVariant,
   resign,
@@ -12,7 +13,7 @@ import {
   type PlayerColor,
   type VariantId,
 } from "@fourman/game-engine";
-import { MAX_CHAT_LENGTH, type ChatMessage, type RoomPhase, type RoomView, type SeatPlan } from "@fourman/shared";
+import { MAX_CHAT_LENGTH, MOVE_TIME_OPTIONS, type ChatMessage, type RoomPhase, type RoomView, type SeatPlan } from "@fourman/shared";
 import { GREETINGS, banter } from "./banter.js";
 
 /** An error whose message is safe to send back to the client. */
@@ -37,13 +38,32 @@ export interface Room {
   plan: Partial<Record<PlayerColor, SeatPlan>>;
   state: GameState;
   chat: ChatMessage[];
+  /** Seconds each move may take; null for no limit. */
+  moveSeconds: number | null;
+  /** Epoch milliseconds by which the player to move must move, when there's a limit. */
+  turnDeadline: number | null;
+  poll: OpenPoll | null;
+  /** Timeouts in a row per seat; moving by yourself clears it. */
+  timeouts: Partial<Record<PlayerColor, number>>;
   lastActivity: number;
+}
+
+interface OpenPoll {
+  id: number;
+  votes: Partial<Record<PlayerColor, number | null>>;
+  voters: PlayerColor[];
+  closesAt: number;
 }
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_NAME_LENGTH = 20;
 /** Older messages drop off the board. */
 const CHAT_KEPT = 100;
+const POLL_MS = 30_000;
+/** Run out of time this many turns in a row and you're out. */
+const MAX_TIMEOUTS = 3;
+
+const describeLimit = (seconds: number | null) => (seconds === null ? "no time limit" : `${seconds} seconds per move`);
 
 function cleanName(name: unknown): string {
   return (typeof name === "string" ? name.trim().slice(0, MAX_NAME_LENGTH) : "") || "Player";
@@ -72,8 +92,16 @@ export class RoomManager {
   /** Puts rooms loaded from storage back into play. */
   restore(rooms: Room[]): void {
     // Rooms saved before the message board existed have no chat yet.
-    for (const room of rooms) this.rooms.set(room.id, { ...room, chat: room.chat ?? [] });
+    // Polls and clocks don't survive a restart; the clock starts afresh for whoever is to move.
+    for (const saved of rooms) {
+      const room: Room = { ...saved, chat: saved.chat ?? [], moveSeconds: saved.moveSeconds ?? null, timeouts: saved.timeouts ?? {}, poll: null, turnDeadline: null };
+      this.resetClock(room);
+      this.rooms.set(room.id, room);
+    }
   }
+
+  /** Set by the server when the coach can be asked for advice. */
+  coach = false;
 
   all(): Room[] {
     return [...this.rooms.values()];
@@ -103,6 +131,10 @@ export class RoomManager {
       plan: {},
       state: createGame({ variant: variant as VariantId }),
       chat: [],
+      moveSeconds: null,
+      turnDeadline: null,
+      poll: null,
+      timeouts: {},
       lastActivity: Date.now(),
     };
     others.forEach((color, i) => this.assign(room, color, (plans as SeatPlan[])[i] ?? "friend"));
@@ -162,8 +194,66 @@ export class RoomManager {
     const before = room.state;
     // The engine rejects anything that isn't this seat's turn or isn't a legal move.
     room.state = applyMove(room.state, { from: move.from, to: move.to, promotion: move.promotion, player: color! });
+    room.timeouts[color!] = 0;
     this.afterChange(room, before);
     return room;
+  }
+
+  /**
+   * The player to move ran out of time on `ply`: the table plays a move for
+   * them, or after too many timeouts in a row, they're out. Does nothing if the
+   * turn has moved on or the deadline hasn't passed yet.
+   */
+  timeOut(room: Room, ply: number, now = Date.now()): boolean {
+    if (room.phase !== "playing" || room.state.ply !== ply || !room.turnDeadline || now < room.turnDeadline) return false;
+    const color = room.state.currentPlayer;
+    const name = room.seats[color]?.name ?? color;
+    const before = room.state;
+    const count = (room.timeouts[color] ?? 0) + 1;
+    room.timeouts[color] = count;
+    const move = count < MAX_TIMEOUTS ? chooseBotMove(room.state, this.random, "hard") : null;
+    if (move) {
+      room.state = applyMove(room.state, { ...move, player: color });
+      this.notice(room, `${name} ran out of time, so a move was played for them (${move.from} → ${move.to}).`);
+    } else {
+      room.state = resign(room.state, color, "timeout");
+      this.notice(room, `${name} ran out of time ${MAX_TIMEOUTS} turns in a row and is out.`);
+    }
+    this.afterChange(room, before);
+    return true;
+  }
+
+  /** A seated person opens a vote on time per move; everyone seated who isn't a bot gets a say. */
+  startPoll(roomId: unknown, color: PlayerColor | null): Room {
+    const room = this.get(roomId);
+    const seat = color && room.seats[color];
+    if (!seat || seat.bot) throw new RoomError("Only players at the table can start a poll");
+    if (room.phase === "finished") throw new RoomError("The game is over");
+    if (room.poll) throw new RoomError("A poll is already open");
+    const voters = room.players.filter((c) => room.seats[c] && !room.seats[c]!.bot && !room.state.eliminations.some((e) => e.player === c));
+    room.poll = { id: Date.now(), votes: {}, voters, closesAt: Date.now() + POLL_MS };
+    this.notice(room, `${seat.name} started a poll: how long should each move take? Now: ${describeLimit(room.moveSeconds)}.`);
+    this.touch(room);
+    return room;
+  }
+
+  vote(roomId: unknown, color: PlayerColor | null, seconds: unknown): Room {
+    const room = this.get(roomId);
+    const poll = room.poll;
+    if (!poll) throw new RoomError("There's no poll open");
+    if (!color || !poll.voters.includes(color)) throw new RoomError("You don't have a vote in this poll");
+    if (!MOVE_TIME_OPTIONS.includes(seconds as number | null)) throw new RoomError("That's not one of the options");
+    poll.votes[color] = seconds as number | null;
+    if (poll.voters.every((c) => c in poll.votes)) this.closePoll(room);
+    else this.touch(room);
+    return room;
+  }
+
+  /** Closes the poll once its time is up. Returns whether it did. */
+  closePollIfDue(room: Room, id: number, now = Date.now()): boolean {
+    if (room.poll?.id !== id || now < room.poll.closesAt) return false;
+    this.closePoll(room);
+    return true;
   }
 
   resign(roomId: unknown, color: PlayerColor | null): Room {
@@ -172,6 +262,13 @@ export class RoomManager {
     room.state = resign(room.state, color!);
     this.afterChange(room, before);
     return room;
+  }
+
+  /** Posts a line for a server bot, e.g. a reply written by the language model. */
+  botSay(room: Room, color: PlayerColor, text: string): void {
+    if (!room.seats[color]?.bot) return;
+    this.post(room, this.botLine(room, color, text));
+    this.touch(room);
   }
 
   /** Posts to the message board as the seat `color`, or as a spectator called `name` when `color` is null. */
@@ -215,6 +312,15 @@ export class RoomManager {
       plan: { ...room.plan },
       state: room.state,
       chat: room.chat,
+      moveSeconds: room.moveSeconds,
+      turnEndsInMs: room.turnDeadline === null ? null : Math.max(0, room.turnDeadline - Date.now()),
+      poll: room.poll && {
+        id: room.poll.id,
+        votes: { ...room.poll.votes },
+        voters: [...room.poll.voters],
+        closesInMs: Math.max(0, room.poll.closesAt - Date.now()),
+      },
+      coach: this.coach,
     };
   }
 
@@ -226,6 +332,7 @@ export class RoomManager {
   private begin(room: Room): void {
     room.state = room.players.filter((c) => !room.seats[c]).reduce((state, c) => resign(state, c), room.state);
     room.phase = "playing";
+    this.resetClock(room);
     const greeter = room.players.find((c) => room.seats[c]?.bot);
     if (greeter) this.post(room, this.botLine(room, greeter, GREETINGS[Math.floor(this.random() * GREETINGS.length)]!));
     this.touch(room);
@@ -250,8 +357,42 @@ export class RoomManager {
     return room;
   }
 
+  /**
+   * The most-voted option wins; a tie goes to the longer time (no limit is
+   * longest), since it's easier to speed up than to catch up.
+   */
+  private closePoll(room: Room): void {
+    const poll = room.poll!;
+    room.poll = null;
+    const tally = new Map<number | null, number>();
+    for (const choice of Object.values(poll.votes)) tally.set(choice ?? null, (tally.get(choice ?? null) ?? 0) + 1);
+    if (tally.size === 0) {
+      this.notice(room, `Nobody voted, so it stays at ${describeLimit(room.moveSeconds)}.`);
+    } else {
+      const length = (c: number | null) => c ?? Infinity;
+      const [winner] = [...tally].sort(([a, x], [b, y]) => y - x || length(b) - length(a))[0]!;
+      room.moveSeconds = winner;
+      room.timeouts = {};
+      this.resetClock(room);
+      this.notice(room, `The table voted for ${describeLimit(winner)}.`);
+    }
+    this.touch(room);
+  }
+
+  /** Starts the clock for whoever is to move now. Bots move on their own, so they aren't timed. */
+  private resetClock(room: Room): void {
+    const seat = room.seats[room.state.currentPlayer];
+    room.turnDeadline =
+      room.phase === "playing" && room.moveSeconds !== null && seat && !seat.bot ? Date.now() + room.moveSeconds * 1000 : null;
+  }
+
+  private notice(room: Room, text: string): void {
+    this.post(room, { name: "Table", color: null, bot: false, system: true, text });
+  }
+
   private afterChange(room: Room, before: GameState): void {
     if (room.state.status === "finished") room.phase = "finished";
+    this.resetClock(room);
     const isBot = (c: PlayerColor) => Boolean(room.seats[c]?.bot);
     const who = (c: PlayerColor) => room.seats[c]?.name ?? c;
     for (const remark of banter(before, room.state, isBot, who, this.random)) {

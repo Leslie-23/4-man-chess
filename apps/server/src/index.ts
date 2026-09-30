@@ -11,6 +11,7 @@ const store: RoomStore = process.env.MONGODB_URI
   : new MemoryStore();
 const { app, restore } = buildServer({ logger: true, store });
 const resumed = await restore();
+app.log.info(process.env.GROQ_API_KEY ? `Bots answer chat with Groq (${process.env.GROQ_MODEL ?? "llama-3.1-8b-instant"})` : "No GROQ_API_KEY: bots only use canned chat lines");
 app.log.info(process.env.MONGODB_URI ? `MongoDB connected; resumed ${resumed} unfinished game(s)` : "No MONGODB_URI: rooms are kept in memory only");
 
 await app.listen({ port, host: "0.0.0.0" });

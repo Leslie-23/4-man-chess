@@ -12,6 +12,8 @@ import { getSocket, loadToken, saveToken } from "./socket";
  */
 export function useRoom(roomId: string, name: string | null) {
   const [room, setRoom] = useState<RoomView | null>(null);
+  // When the latest view arrived, so the clocks it carries ("ends in N ms") become times on this device.
+  const [receivedAt, setReceivedAt] = useState(0);
   const [color, setColor] = useState<PlayerColor | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,9 @@ export function useRoom(roomId: string, name: string | null) {
       setError(null);
     };
     const onUpdate = (next: RoomView) => {
-      if (next.id === id) setRoom(next);
+      if (next.id !== id) return;
+      setRoom(next);
+      setReceivedAt(Date.now());
     };
     const onDisconnect = () => setConnected(false);
 
@@ -63,5 +67,11 @@ export function useRoom(roomId: string, name: string | null) {
     resign: () => send(getSocket().emitWithAck("game:resign", { roomId: id })),
     /** Chat replies go back to the caller, so the message box can show its own errors. */
     say: (text: string): Promise<AckResult> => getSocket().emitWithAck("chat:send", { roomId: id, text }),
+    startPoll: (): Promise<AckResult> => getSocket().emitWithAck("poll:start", { roomId: id }),
+    vote: (seconds: number | null): Promise<AckResult> => getSocket().emitWithAck("poll:vote", { roomId: id, seconds }),
+    askCoach: () => getSocket().timeout(20_000).emitWithAck("coach:ask", { roomId: id }).catch((): AckResult<{ advice: string }> => ({ ok: false, error: "The coach didn't answer in time" })),
+    /** Local times (epoch ms) when the current turn and the open poll run out. */
+    turnDeadline: room?.turnEndsInMs == null ? null : receivedAt + room.turnEndsInMs,
+    pollDeadline: room?.poll ? receivedAt + room.poll.closesInMs : null,
   };
 }

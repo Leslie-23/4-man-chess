@@ -3,6 +3,7 @@ import type { ClientToServerEvents, RoomView, SeatGrant, ServerToClientEvents } 
 import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "../src/app.js";
+import type { PromptMessage } from "../src/replies.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -11,7 +12,7 @@ let url: string;
 const clients: Client[] = [];
 
 beforeEach(async () => {
-  server = buildServer({ botDelayMs: 5 });
+  server = buildServer({ botDelayMs: 5, complete: null });
   await server.app.listen({ port: 0, host: "127.0.0.1" });
   url = `http://127.0.0.1:${(server.app.server.address() as AddressInfo).port}`;
 });
@@ -261,5 +262,77 @@ describe("multiplayer sockets", () => {
     expect(reply.board.recent).toHaveLength(3);
     expect(reply.board.recent[0]).toMatchObject({ winner: "bot:easy", variant: "two" });
     expect(await reader.emitWithAck("leaderboard:get", { period: "year" as never })).toMatchObject({ ok: false });
+  });
+
+  it("lets the bot a message names answer it through the language model", async () => {
+    const prompts: PromptMessage[][] = [];
+    const replying = buildServer({ botDelayMs: 60_000, complete: async (messages) => (prompts.push(messages), '"Yellow Bot: Bold words, Ada."') });
+    await replying.app.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const host: Client = connect(`http://127.0.0.1:${(replying.app.server.address() as AddressInfo).port}`, { transports: ["websocket"], forceNew: true });
+      clients.push(host);
+      const created = await host.emitWithAck("room:create", { name: "Ada", seats: ["easy", "hard", "advanced"] });
+      if (!created.ok) throw new Error(created.error);
+      const answered = nextUpdate(host, (room) => room.chat.some((m) => m.bot && m.text === "Bold words, Ada."));
+      await host.emitWithAck("chat:send", { roomId: created.roomId, text: "yellow, you're going down" });
+      const room = await answered;
+      expect(room.chat.at(-1)).toMatchObject({ color: "yellow", bot: true, name: "Yellow Bot" });
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]![0]).toMatchObject({ role: "system" });
+      expect(prompts[0]![0]!.content).toContain("Yellow Bot");
+      expect(prompts[0]!.at(-1)).toEqual({ role: "user", content: "Ada: yellow, you're going down" });
+    } finally {
+      await replying.app.close();
+    }
+  });
+
+  it("sets the time per move by a poll of the people at the table; a tie goes to the longer time", async () => {
+    const { roomId, sockets } = await fullRoom();
+    const outsider = await client();
+    expect(await sockets[1]!.emitWithAck("poll:start", { roomId })).toEqual({ ok: true });
+    expect(await sockets[2]!.emitWithAck("poll:start", { roomId })).toMatchObject({ ok: false });
+    expect(await outsider.emitWithAck("poll:vote", { roomId, seconds: 15 })).toMatchObject({ ok: false });
+    expect(await sockets[0]!.emitWithAck("poll:vote", { roomId, seconds: 42 })).toMatchObject({ ok: false });
+
+    const closed = nextUpdate(sockets[0]!, (room) => room.poll === null && room.moveSeconds !== null);
+    for (const [i, seconds] of [15, 15, 60, 60].entries()) {
+      expect(await sockets[i]!.emitWithAck("poll:vote", { roomId, seconds })).toEqual({ ok: true });
+    }
+    const room = await closed;
+    expect(room.moveSeconds).toBe(60);
+    expect(room.turnEndsInMs).toBeGreaterThan(55_000);
+    expect(room.chat.filter((m) => m.system).map((m) => m.text)).toEqual([
+      "Friend 0 started a poll: how long should each move take? Now: no time limit.",
+      "The table voted for 60 seconds per move.",
+    ]);
+  });
+
+  it("only offers the coach when a model is set up", async () => {
+    const host = await client();
+    const first = nextUpdate(host, () => true);
+    const created = await host.emitWithAck("room:create", { name: "Ada", variant: "two", seats: ["hard"] });
+    if (!created.ok) throw new Error(created.error);
+    expect((await first).coach).toBe(false);
+    expect(await host.emitWithAck("coach:ask", { roomId: created.roomId })).toMatchObject({ ok: false });
+  });
+
+  it("has the coach explain the engine's move, privately to the player who asked", async () => {
+    const prompts: PromptMessage[][] = [];
+    const coached = buildServer({ botDelayMs: 60_000, complete: async (messages) => (prompts.push(messages), "**Develop** your knight toward the centre.") });
+    await coached.app.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const host: Client = connect(`http://127.0.0.1:${(coached.app.server.address() as AddressInfo).port}`, { transports: ["websocket"], forceNew: true });
+      clients.push(host);
+      const first = nextUpdate(host, () => true);
+      const created = await host.emitWithAck("room:create", { name: "Ada", variant: "two", seats: ["hard"] });
+      if (!created.ok) throw new Error(created.error);
+      expect((await first).coach).toBe(true);
+      expect(await host.emitWithAck("coach:ask", { roomId: created.roomId })).toEqual({ ok: true, advice: "Develop your knight toward the centre." });
+      expect(prompts[0]![1]!.content).toContain("The engine's recommended move for white:");
+      expect(prompts[0]![1]!.content).toContain("white (Ada): K e1, Q d1");
+      expect(await host.emitWithAck("coach:ask", { roomId: created.roomId })).toMatchObject({ ok: false, error: expect.stringContaining("moment") });
+    } finally {
+      await coached.app.close();
+    }
   });
 });

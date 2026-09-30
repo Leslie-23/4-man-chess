@@ -28,12 +28,30 @@ const toInput = (v: Variant, move: InternalMove): MoveInput => ({
  */
 export function chooseBotMove(state: GameState, random: () => number, level: BotLevel = "hard"): MoveInput | null {
   if (state.status !== "playing") return null;
-  const moves = generateLegalMoves(state, state.currentPlayer);
-  if (moves.length === 0) return null;
+  const legal = generateLegalMoves(state, state.currentPlayer);
+  if (legal.length === 0) return null;
   const v = getVariant(state.variant);
+  const moves = withoutShuffles(v, state, legal);
   const pick =
     level === "easy" ? pickEasy(state, moves, random) : level === "hard" ? pickHard(v, state, moves, random) : pickAdvanced(v, state, moves, random);
   return toInput(v, pick);
+}
+
+/**
+ * Drops quiet moves that just walk a piece back to where our last move took it
+ * from, so bots don't shuffle a piece to and fro forever. Captures stay, and
+ * if nothing else is legal the shuffle is allowed.
+ */
+function withoutShuffles(v: Variant, state: GameState, moves: InternalMove[]): InternalMove[] {
+  let last: GameState["history"][number] | undefined;
+  for (let i = state.history.length - 1; i >= 0 && !last; i--) {
+    if (state.history[i]!.player === state.currentPlayer) last = state.history[i];
+  }
+  if (!last) return moves;
+  const from = v.indexOf(last.to);
+  const to = v.indexOf(last.from);
+  const fresh = moves.filter((m) => !(m.from === from && m.to === to && !state.board[m.to]));
+  return fresh.length > 0 ? fresh : moves;
 }
 
 function best<T>(items: T[], score: (item: T) => number): T {

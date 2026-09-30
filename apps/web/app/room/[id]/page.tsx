@@ -4,7 +4,7 @@ import { BOT_LEVELS, chooseBotMove, createGame, getVariant, type BotLevel, type 
 import type { RoomView, SeatPlan } from "@fourman/shared";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Board } from "../../../components/Board";
 import { Chat } from "../../../components/Chat";
 import { Segmented, ThemePicker } from "../../../components/Controls";
@@ -12,8 +12,10 @@ import { MoveLog } from "../../../components/MoveLog";
 import { PlayerPlate } from "../../../components/PlayerPlate";
 import { SeatPlanner } from "../../../components/SeatPlanner";
 import { Standings } from "../../../components/Standings";
+import { TopBar } from "../../../components/TopBar";
 import { useHints } from "../../../lib/hints";
 import { useLocalSetting } from "../../../lib/settings";
+import { clock, useCountdown } from "../../../lib/useCountdown";
 import { getSocket, loadName, saveName } from "../../../lib/socket";
 import { BOARD_THEME_IDS, BOT_LEVEL_INFO, themeById, type BoardThemeId } from "../../../lib/themes";
 import { useRoom } from "../../../lib/useRoom";
@@ -63,17 +65,12 @@ export default function RoomPage() {
   return <Room id={id} name={name} />;
 }
 
-function TopBar({ children }: { children?: ReactNode }) {
-  return (
-    <header className="topbar">
-      <Link href="/" className="wordmark">4-Man Chess</Link>
-      {children}
-    </header>
-  );
-}
-
 function Room({ id, name }: { id: string; name: string }) {
-  const { room, color, connected, error, move, start, resign, say } = useRoom(id, name);
+  const { room, color, connected, error, move, start, resign, say, startPoll, vote, askCoach, turnDeadline, pollDeadline } = useRoom(id, name);
+  const secondsLeft = useCountdown(turnDeadline);
+  const [advice, setAdvice] = useState<{ text: string; ply: number } | null>(null);
+  const [coachError, setCoachError] = useState<string | null>(null);
+  const [coaching, setCoaching] = useState(false);
   const [copied, setCopied] = useState(false);
   const [auto, setAuto] = useState(false);
   const [autoLevel, setAutoLevel] = useLocalSetting<BotLevel>("fourman:auto-level", "hard", BOT_LEVELS);
@@ -153,8 +150,19 @@ function Room({ id, name }: { id: string; name: string }) {
     }
   };
 
+  const playingSeat = room.phase === "playing" && color !== null && !out.has(color);
+  const seatedPerson = color !== null && Boolean(room.seats[color]) && !room.seats[color]?.bot;
+
+  const coach = async () => {
+    setCoaching(true);
+    const result = await askCoach();
+    setCoaching(false);
+    setCoachError(result.ok ? null : result.error);
+    if (result.ok) setAdvice({ text: result.advice, ply: state.ply });
+  };
+
   return (
-    <div className="app">
+    <div className="app room-app">
       <TopBar>
         <div className="room-chip">
           <span className="label">Room</span>
@@ -165,21 +173,111 @@ function Room({ id, name }: { id: string; name: string }) {
       </TopBar>
 
       <main className="game">
-        <section className="board-area">
-          <Board state={state} perspective={perspective} theme={themeById(themeId)} playable={myTurn ? color : null} onMove={(m) => void move(m)} plates={plates}
-            hints={hintsOn ? { move: suggestion, danger: hints.danger } : undefined}
-          />
+        {/* Left: how the game is going. */}
+        <aside className="sidebar rail-left" aria-label="Standings and moves">
+          {room.phase !== "lobby" && (
+            <div className="block">
+              <h2 className="label">Standings</h2>
+              <Standings room={room} />
+            </div>
+          )}
+          <details className="block fold" open={room.phase !== "lobby"}>
+            <summary className="label">Moves</summary>
+            <MoveLog room={room} />
+          </details>
+          <details className="block fold">
+            <summary className="label">How to play · {info.players} players</summary>
+            <ol className="rules-list">
+              {info.rules.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ol>
+          </details>
+          <details className="block fold">
+            <summary className="label">Board theme</summary>
+            <ThemePicker value={themeId} onChange={setThemeId} />
+          </details>
+        </aside>
+
+        {/* Centre: the board, with this player's controls side by side underneath. */}
+        <section className="board-col">
+          <div className="board-area">
+            <Board state={state} perspective={perspective} theme={themeById(themeId)} playable={myTurn ? color : null} onMove={(m) => void move(m)} plates={plates}
+              hints={hintsOn ? { move: suggestion, danger: hints.danger } : undefined}
+            />
+          </div>
+          {playingSeat && (
+            <div className="board-controls">
+              <div className="control-card">
+                <label className="toggle">
+                  <input type="checkbox" checked={hintsOn} onChange={(e) => setHintSetting(e.target.checked ? "on" : "off")} />
+                  <span><strong>Hints</strong> {hintsOn ? "on" : "off"}</span>
+                </label>
+                {hintsOn ? (
+                  <div className="hint-card">
+                    {hints.inCheck && <p><strong>You're in check.</strong> Move your king, block, or take the attacker.</p>}
+                    {suggestion ? (
+                      <p>
+                        <span className="hint-key from" /> <span className="hint-key to" /> Try your <strong>{suggestion.piece}</strong> {suggestion.from} → {suggestion.to}
+                        {suggestion.capture && <>, taking {victim ? `${who(victim)}'s` : "a"} {suggestion.capture}</>}
+                        {suggestion.castle && <> (castling {suggestion.castle})</>}.{" "}
+                        <button type="button" className="tiny" onClick={() => void move({ from: suggestion.from, to: suggestion.to, ...(suggestion.promotion && { promotion: suggestion.promotion }) })}>
+                          Play it
+                        </button>
+                      </p>
+                    ) : (
+                      <p className="muted">A suggested move appears on your turn.</p>
+                    )}
+                    {hints.danger.size > 0 && (
+                      <p>
+                        <span className="hint-key danger" /> {hints.danger.size === 1 ? "1 piece" : `${hints.danger.size} pieces`} can be taken next turn.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="blurb">Marks a good move and pieces in danger. Handy while you learn.</p>
+                )}
+              </div>
+              <div className="control-card">
+                <label className="toggle">
+                  <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+                  <span><strong>Auto mode</strong> {auto ? "on: a bot plays for you" : "off"}</span>
+                </label>
+                <Segmented label="Auto mode strength" value={autoLevel} options={LEVEL_OPTIONS} onChange={setAutoLevel} />
+                <button type="button" className="danger wide" onClick={() => confirm("Resign this game?") && void resign()}>Resign</button>
+              </div>
+              {room.coach && (
+                <div className="control-card">
+                  <span className="toggle-like"><span><strong>Coach</strong> explains the position</span></span>
+                  {advice && <p className={advice.ply === state.ply ? "coach-advice" : "coach-advice stale"}>{advice.text}</p>}
+                  {advice && advice.ply !== state.ply && <p className="muted small-text">That was a few moves ago.</p>}
+                  {!advice && <p className="blurb">Stuck? Ask for a plain-English read of the board and the move worth playing.</p>}
+                  {coachError && <p className="error">{coachError}</p>}
+                  <button type="button" className="wide" disabled={coaching} onClick={() => void coach()}>
+                    {coaching ? "Thinking…" : advice ? "Ask again" : "Ask the coach"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
-        <aside className="sidebar">
+        {/* Right: what's happening now, and the table's chat. */}
+        <aside className="sidebar rail-right" aria-label="Game status and chat">
           <div className={myTurn ? "status mine" : "status"}>
             <span className="label">{room.phase === "lobby" ? "Lobby" : room.phase === "finished" ? "Game over" : `Move ${Math.floor(state.ply / players.length) + 1}`}</span>
             <p>{statusLine(room, color)}</p>
+            {secondsLeft !== null && room.phase === "playing" && (
+              <span className={secondsLeft <= 5 ? "turn-clock urgent" : "turn-clock"} aria-live={secondsLeft <= 5 ? "assertive" : "off"}>
+                {clock(secondsLeft)} <span className="muted-inline">left for {state.currentPlayer === color ? "you" : who(state.currentPlayer)}</span>
+              </span>
+            )}
           </div>
           {(error || hostError) && <p className="error">{error ?? hostError}</p>}
           {room.phase === "finished" && (
-            <Link href="/leaderboard" className="button wide">See the leaderboard</Link>
+            <Link href="/leaderboard" className="button primary wide">See the leaderboard</Link>
           )}
+          {color === null && <p className="blurb">You're watching. The room was full or already under way.</p>}
 
           {room.phase === "lobby" && (
             <div className="block">
@@ -208,84 +306,21 @@ function Room({ id, name }: { id: string; name: string }) {
             </div>
           )}
 
-          {room.phase === "playing" && color && !out.has(color) && (
-            <div className="block">
-              <h2 className="label">Hints</h2>
-              <label className="toggle">
-                <input type="checkbox" checked={hintsOn} onChange={(e) => setHintSetting(e.target.checked ? "on" : "off")} />
-                <span>{hintsOn ? "On: a suggested move and pieces in danger are marked" : "Off: turn on for coaching while you learn"}</span>
-              </label>
-              {hintsOn && (
-                <div className="hint-card">
-                  {hints.inCheck && <p><strong>You're in check.</strong> Move your king, block the attack, or take the attacker.</p>}
-                  {suggestion ? (
-                    <>
-                      <p>
-                        <span className="hint-key from" /> <span className="hint-key to" /> Try your <strong>{suggestion.piece}</strong> {suggestion.from} → {suggestion.to}
-                        {suggestion.capture && <>, taking {victim ? `${who(victim)}'s` : "a"} {suggestion.capture}</>}
-                        {suggestion.castle && <> (castling {suggestion.castle})</>}.
-                      </p>
-                      <button type="button" className="tiny" onClick={() => void move({ from: suggestion.from, to: suggestion.to, ...(suggestion.promotion && { promotion: suggestion.promotion }) })}>
-                        Play it
-                      </button>
-                    </>
-                  ) : (
-                    <p className="muted">A suggested move appears on your turn.</p>
-                  )}
-                  {hints.danger.size > 0 && (
-                    <p>
-                      <span className="hint-key danger" /> {hints.danger.size === 1 ? "1 of your pieces" : `${hints.danger.size} of your pieces`} could be taken next turn. Move or guard {hints.danger.size === 1 ? "it" : "them"}.
-                    </p>
-                  )}
-                  <p className="muted">Tap any of your pieces to see where it can go.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {room.phase !== "lobby" && color && !out.has(color) && room.phase === "playing" && (
-            <div className="block">
-              <h2 className="label">Auto mode</h2>
-              <label className="toggle">
-                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
-                <span>{auto ? "On: a bot is playing your moves" : "Off: let a bot play for you and watch"}</span>
-              </label>
-              <Segmented label="Auto mode strength" value={autoLevel} options={LEVEL_OPTIONS} onChange={setAutoLevel} />
-              <button type="button" className="danger wide" onClick={() => confirm("Resign this game?") && void resign()}>Resign</button>
-            </div>
-          )}
-          {color === null && <p className="blurb">You're watching. The room was full or already under way.</p>}
-
-          {room.phase !== "lobby" && (
-            <div className="block">
-              <h2 className="label">Standings</h2>
-              <Standings room={room} />
-            </div>
-          )}
-
-          <div className="block">
+          <div className="block chat-block">
             <h2 className="label">Table talk</h2>
-            <Chat messages={room.chat ?? []} color={color} onSend={say} />
+            <Chat
+              messages={room.chat ?? []}
+              color={color}
+              onSend={say}
+              poll={room.poll ?? null}
+              pollDeadline={pollDeadline}
+              moveSeconds={room.moveSeconds ?? null}
+              canStartPoll={seatedPerson && room.phase !== "finished"}
+              onStartPoll={startPoll}
+              onVote={vote}
+              who={who}
+            />
           </div>
-
-          <div className="block">
-            <h2 className="label">Board theme</h2>
-            <ThemePicker value={themeId} onChange={setThemeId} />
-          </div>
-
-          <div className="block">
-            <h2 className="label">Moves</h2>
-            <MoveLog room={room} />
-          </div>
-
-          <details className="block rules">
-            <summary className="label">How to play · {info.players} players</summary>
-            <ol>
-              {info.rules.map((rule) => (
-                <li key={rule}>{rule}</li>
-              ))}
-            </ol>
-          </details>
         </aside>
       </main>
     </div>

@@ -36,4 +36,14 @@ describe("bot", () => {
       expect(state.status).toBe("finished");
     }
   });
+
+  it.each(BOT_LEVELS)("%s doesn't walk a piece straight back to where it just came from", (level) => {
+    // Red's rook has just gone e4 → e5; with other quiet moves open, it shouldn't go back.
+    let state = createGameFromPosition({ ...KINGS, e4: "rR", j2: "rP" });
+    state = applyMove(state, { from: "e4", to: "e5" });
+    state = { ...state, currentPlayer: "red" };
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      expect(chooseBotMove(state, seeded(seed), level)).not.toEqual({ from: "e5", to: "e4" });
+    }
+  });
 });
