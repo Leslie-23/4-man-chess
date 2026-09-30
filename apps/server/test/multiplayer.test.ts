@@ -12,7 +12,7 @@ let url: string;
 const clients: Client[] = [];
 
 beforeEach(async () => {
-  server = buildServer({ botDelayMs: 5, complete: null });
+  server = buildServer({ botDelayMs: 5, complete: null, voice: null });
   await server.app.listen({ port: 0, host: "127.0.0.1" });
   url = `http://127.0.0.1:${(server.app.server.address() as AddressInfo).port}`;
 });

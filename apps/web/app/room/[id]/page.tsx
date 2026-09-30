@@ -15,6 +15,7 @@ import { Standings } from "../../../components/Standings";
 import { TopBar } from "../../../components/TopBar";
 import { useHints } from "../../../lib/hints";
 import { useLocalSetting } from "../../../lib/settings";
+import { useVoice } from "../../../lib/useVoice";
 import { clock, useCountdown } from "../../../lib/useCountdown";
 import { getSocket, loadName, saveName } from "../../../lib/socket";
 import { BOARD_THEME_IDS, BOT_LEVEL_INFO, themeById, type BoardThemeId } from "../../../lib/themes";
@@ -68,6 +69,7 @@ export default function RoomPage() {
 function Room({ id, name }: { id: string; name: string }) {
   const { room, color, connected, error, move, start, resign, say, startPoll, vote, askCoach, turnDeadline, pollDeadline } = useRoom(id, name);
   const secondsLeft = useCountdown(turnDeadline);
+  const voice = useVoice(id);
   const [advice, setAdvice] = useState<{ text: string; ply: number } | null>(null);
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coaching, setCoaching] = useState(false);
@@ -136,6 +138,8 @@ function Room({ id, name }: { id: string; name: string }) {
         isTurn={room.phase === "playing" && state.currentPlayer === c}
         isYou={c === color}
         waiting={room.phase === "lobby" && room.plan[c] === "friend" && !room.seats[c]}
+        onVoice={voice.present.has(c)}
+        speaking={voice.speaking.has(c)}
       />,
     ]),
   );
@@ -303,6 +307,33 @@ function Room({ id, name }: { id: string; name: string }) {
               {onLocalhost && (
                 <p className="note">Friends can't open a localhost link. Open this page through your computer's network address before you share it.</p>
               )}
+            </div>
+          )}
+
+          {room.voice && (
+            <div className="block voice">
+              <h2 className="label">Voice</h2>
+              {voice.status === "on" ? (
+                <>
+                  <p className="voice-line">
+                    <span className="voice-dot" /> {voice.present.size === 1 ? "Just you so far" : `${voice.present.size} at the table`}
+                    {!voice.canTalk && " · you're listening"}
+                  </p>
+                  <div className="row">
+                    {voice.canTalk && (
+                      <button type="button" className={voice.muted ? "primary" : undefined} onClick={() => void voice.toggleMute()}>
+                        {voice.muted ? "Unmute" : "Mute"}
+                      </button>
+                    )}
+                    <button type="button" onClick={voice.leave}>Leave voice</button>
+                  </div>
+                </>
+              ) : (
+                <button type="button" className="primary wide" disabled={voice.status === "joining"} onClick={() => void voice.join()}>
+                  {voice.status === "joining" ? "Joining…" : color ? "Join voice" : "Listen in"}
+                </button>
+              )}
+              {voice.error && <p className="error">{voice.error}</p>}
             </div>
           )}
 

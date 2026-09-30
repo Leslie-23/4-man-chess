@@ -102,6 +102,8 @@ export class RoomManager {
 
   /** Set by the server when the coach can be asked for advice. */
   coach = false;
+  /** Set by the server when voice chat is available. */
+  voice = false;
 
   all(): Room[] {
     return [...this.rooms.values()];
@@ -321,6 +323,7 @@ export class RoomManager {
         closesInMs: Math.max(0, room.poll.closesAt - Date.now()),
       },
       coach: this.coach,
+      voice: this.voice,
     };
   }
 

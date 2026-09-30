@@ -40,3 +40,16 @@ describe("groqComplete", () => {
     expect(String(log.mock.calls[1]![0])).toContain("finish_reason: length");
   });
 });
+
+describe("voiceToken", async () => {
+  const { voiceToken } = await import("../src/voice.js");
+  const claims = (jwt: string) => JSON.parse(Buffer.from(jwt.split(".")[1]!, "base64url").toString());
+  const config = { url: "wss://example.livekit.cloud", apiKey: "key", apiSecret: "a-secret-that-is-long-enough-for-hs256" };
+
+  it("lets seated players talk and spectators only listen, in a channel per room", async () => {
+    const player = claims(await voiceToken(config, "ABCDE", { color: "red", name: "Ada" }));
+    expect(player).toMatchObject({ sub: "red", name: "Ada", video: { room: "fourman-ABCDE", roomJoin: true, canPublish: true, canSubscribe: true } });
+    const watcher = claims(await voiceToken(config, "ABCDE", { spectator: "sock1", name: "Cy" }));
+    expect(watcher).toMatchObject({ sub: "watcher-sock1", video: { canPublish: false, canSubscribe: true } });
+  });
+});

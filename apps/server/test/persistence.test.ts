@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 async function start(store: RoomStore) {
-  const server = buildServer({ store, botDelayMs: 5, complete: null });
+  const server = buildServer({ store, botDelayMs: 5, complete: null, voice: null });
   servers.push(server);
   await server.restore();
   await server.app.listen({ port: 0, host: "127.0.0.1" });

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leslie Paul Games</title>
+  <meta name="description" content="Board games for the whole table, in the browser. Four-player chess now, more on the way.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Leslie Paul Games">
+  <meta property="og:description" content="Board games for the whole table, in the browser. Pull up a chair.">
+  <meta property="og:image" content="https://lesliepaulgames.onrender.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="floaters" aria-hidden="true"></div>
+
+  <header class="bar">
+    <a class="mark" href="/"><span class="die-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>Leslie Paul Games</a>
+    <span class="bar-note">Pull up a chair</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Board games · in the browser · for the whole table</p>
+      <h1 class="wobble" aria-label="Game night, sorted.">
+        <span>Game</span> <span>night,</span><br><span>sorted.</span>
+      </h1>
+      <p class="lede">No box to find, no pieces under the sofa. Send friends a code, fill empty chairs with bots, and play on any device.</p>
+
+      <div class="roller">
+        <div class="dice" aria-hidden="true">
+          <div class="die" data-face="5"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="die" data-face="3"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="roller-copy">
+          <button type="button" class="roll" id="roll">Can't decide? Roll for it</button>
+          <p class="verdict" id="verdict" aria-live="polite">Tonight's game is up to the dice.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="games" aria-label="Games">
+      <article class="game live" data-game="chess" data-href="https://fourman-web.onrender.com">
+        <div class="stripe"><i class="red"></i><i class="blue"></i><i class="yellow"></i><i class="green"></i></div>
+        <div class="game-art chess-art" aria-hidden="true">
+          <span class="p red">♚︎</span><span class="p blue">♛︎</span><span class="p yellow">♞︎</span><span class="p green">♜︎</span>
+        </div>
+        <div class="game-body">
+          <div class="game-head">
+            <h2>4-Man Chess</h2>
+            <span class="status" data-status><span class="light"></span><span data-status-text>Checking the table…</span></span>
+          </div>
+          <p>Chess for two, three or four. Every army against every other, on a cross, a hexagon or the classic square.</p>
+          <ul class="tags"><li>2–4 players</li><li>Bots</li><li>Voice chat</li><li>Leaderboard</li></ul>
+          <a class="play" href="https://fourman-web.onrender.com">Play now <span aria-hidden="true">→</span></a>
+        </div>
+      </article>
+
+      <article class="game soon" data-game="monopoly">
+        <div class="stripe"><i class="brown"></i><i class="sky"></i><i class="pink"></i><i class="orange"></i><i class="red"></i><i class="yellow"></i><i class="green"></i><i class="navy"></i></div>
+        <div class="game-art tycoon-art" aria-hidden="true">
+          <span class="house h1"></span><span class="house h2"></span><span class="house h3"></span><span class="hotel"></span>
+        </div>
+        <div class="game-body">
+          <div class="game-head">
+            <h2>Monopoly</h2>
+            <span class="status soon-tag">Coming soon</span>
+          </div>
+          <p>Buy the street, build the houses, bankrupt your friends. House rules included. Still being built.</p>
+          <ul class="tags"><li>2–6 players</li><li>Trading</li><li>Bots</li></ul>
+          <span class="play disabled" aria-disabled="true">Being built <span aria-hidden="true">🔨</span></span>
+        </div>
+      </article>
+
+      <article class="game mystery" aria-label="More games on the way">
+        <div class="game-art mystery-art" aria-hidden="true">?</div>
+        <div class="game-body">
+          <h2>Next up?</h2>
+          <p>More games are rolling in. Got one your table loves? Tell Leslie.</p>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Made for game night by Leslie Paul</span>
+    <span class="foot-note">Free servers nap when nobody's playing. The first game of the night can take a minute to wake up.</span>
+  </footer>
+
+  <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -63,6 +63,8 @@ export interface RoomView {
   poll: MovePoll | null;
   /** The coach (explanations written by a language model) is switched on for this server. */
   coach: boolean;
+  /** Voice chat is set up on this server. */
+  voice: boolean;
 }
 
 /** Window a leaderboard covers, counting back from now. */
@@ -131,6 +133,8 @@ export interface ClientToServerEvents {
   "poll:vote": (payload: { roomId: string; seconds: number | null }, ack: Ack) => void;
   /** Seated players only: a short plain-English read of the position and a move worth playing. */
   "coach:ask": (payload: { roomId: string }, ack: Ack<{ advice: string }>) => void;
+  /** A pass into the room's voice channel: seated players may talk, spectators listen. */
+  "voice:token": (payload: { roomId: string }, ack: Ack<{ url: string; token: string; canTalk: boolean }>) => void;
   /** Wins and games per entrant over `period`, plus the latest finished games. No room needed. */
   "leaderboard:get": (payload: { period: LeaderboardPeriod }, ack: Ack<{ board: LeaderboardView }>) => void;
 }

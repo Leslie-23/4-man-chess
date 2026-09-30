@@ -15,10 +15,13 @@ interface PlateProps {
   waiting?: boolean;
   /** Optional control shown on the plate. */
   action?: ReactNode;
+  /** In the voice channel, and talking right now. */
+  onVoice?: boolean;
+  speaking?: boolean;
 }
 
 /** Name card for one seat, drawn in the board corner beside that army. */
-export function PlayerPlate({ color, seat, state, isTurn, isYou, waiting = false, action }: PlateProps) {
+export function PlayerPlate({ color, seat, state, isTurn, isYou, waiting = false, action, onVoice = false, speaking = false }: PlateProps) {
   const elimination = state.eliminations.find((e) => e.player === color);
   const material = state.board.reduce((sum, p) => (p && p.color === color && p.type !== "king" ? sum + PIECE_VALUE[p.type] : sum), 0);
 
@@ -26,9 +29,10 @@ export function PlayerPlate({ color, seat, state, isTurn, isYou, waiting = false
   if (isYou) tags.push("You");
   if (seat?.bot) tags.push(`${BOT_LEVEL_INFO[seat.bot].name} bot`);
   if (seat && !seat.connected) tags.push("Offline");
+  if (onVoice) tags.push("On voice");
 
   return (
-    <div className={["plate", isTurn && "turn", elimination && seat && "out"].filter(Boolean).join(" ")}>
+    <div className={["plate", isTurn && "turn", elimination && seat && "out", speaking && "speaking"].filter(Boolean).join(" ")}>
       <div className="plate-head">
         <span className={`swatch ${color}`} />
         <span className="plate-name">{seat ? seat.name : waiting ? "Waiting…" : "Sitting out"}</span>

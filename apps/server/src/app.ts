@@ -3,6 +3,7 @@ import { Server } from "socket.io";
 import { Leaderboard } from "./leaderboard.js";
 import { DEFAULT_GROQ_MODEL, groqComplete, type Complete } from "./replies.js";
 import { RoomManager } from "./rooms.js";
+import { voiceFromEnv, type VoiceConfig } from "./voice.js";
 import { attachSockets, type GameServer } from "./sockets.js";
 import { MemoryStore, type RoomStore } from "./store.js";
 
@@ -17,8 +18,8 @@ const withScheme = (origin: string) => (/^https?:\/\//.test(origin) ? origin : `
 const groqFromEnv = (log: (error: unknown) => void): Complete | undefined =>
   process.env.GROQ_API_KEY ? groqComplete(process.env.GROQ_API_KEY, process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL, log) : undefined;
 
-export function buildServer(options: FastifyServerOptions & { botDelayMs?: number; store?: RoomStore; complete?: Complete | null } = {}) {
-  const { botDelayMs = Number(process.env.BOT_DELAY_MS ?? 700), store = new MemoryStore(), complete, ...fastifyOptions } = options;
+export function buildServer(options: FastifyServerOptions & { botDelayMs?: number; store?: RoomStore; complete?: Complete | null; voice?: VoiceConfig | null } = {}) {
+  const { botDelayMs = Number(process.env.BOT_DELAY_MS ?? 700), store = new MemoryStore(), complete, voice = voiceFromEnv(), ...fastifyOptions } = options;
   const app = Fastify(fastifyOptions);
   const leaderboard = new Leaderboard((game) => store.saveResult(game));
   const rooms = new RoomManager((room) => {
@@ -32,7 +33,8 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
   // `complete: null` turns replies off even when GROQ_API_KEY is set (tests).
   const replies = complete === null ? undefined : (complete ?? groqFromEnv((error) => app.log.warn({ err: error }, "bot reply failed")));
   rooms.coach = Boolean(replies);
-  const resumeBots = attachSockets(io, rooms, app.log, { botDelayMs, leaderboard, complete: replies });
+  rooms.voice = Boolean(voice);
+  const resumeBots = attachSockets(io, rooms, app.log, { botDelayMs, leaderboard, complete: replies, voice });
 
   /** Loads unfinished games from the store and lets any bot whose turn it is carry on. */
   const restore = async () => {

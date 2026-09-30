@@ -1,0 +1,6 @@
+{
+  "name": "@fourman/hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "lesliepaulgames.onrender.com: the front door to every game. Plain static files in public/, no build step."
+}

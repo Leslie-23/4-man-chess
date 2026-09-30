@@ -5,6 +5,7 @@ import type { Server, Socket } from "socket.io";
 import type { Leaderboard } from "./leaderboard.js";
 import { chooseResponder, cleanReply, coachPrompt, replyPrompt, type Complete } from "./replies.js";
 import { RoomError, type Room, type RoomManager } from "./rooms.js";
+import { voiceToken, type VoiceConfig } from "./voice.js";
 
 interface SocketData {
   roomId?: string;
@@ -34,6 +35,8 @@ export interface SocketOptions {
   leaderboard: Leaderboard;
   /** Writes bots' answers to people's chat. Without it, bots only have their canned lines. */
   complete?: Complete;
+  /** LiveKit settings; without them there's no voice chat. */
+  voice?: VoiceConfig | null;
 }
 
 /** A room's bots answer at most this often, whatever the chat does. */
@@ -247,6 +250,26 @@ export function attachSockets(io: GameServer, rooms: RoomManager, log: FastifyBa
         const advice = await options.complete(coachPrompt(room, color, suggestion));
         if (!advice?.trim()) throw new RoomError("The coach is lost for words. Try again");
         ack({ ok: true, advice: advice.replace(/\*+/g, "").trim().slice(0, COACH_MAX_LENGTH) });
+      } catch (error) {
+        ack({ ok: false, error: error instanceof RoomError ? error.message : "Something went wrong" });
+        if (!(error instanceof RoomError)) log.error(error);
+      }
+    });
+
+    socket.on("voice:token", async (payload, ack) => {
+      if (typeof ack !== "function") return;
+      try {
+        const color = seatIn(payload?.roomId);
+        const room = rooms.get(payload?.roomId);
+        if (!options.voice) throw new RoomError("Voice chat isn't set up on this server");
+        const seat = color ? room.seats[color] : null;
+        const canTalk = Boolean(color && seat && !seat.bot);
+        const token = await voiceToken(
+          options.voice,
+          room.id,
+          canTalk ? { color: color!, name: seat!.name } : { spectator: socket.id, name: socket.data.name ?? "Watcher" },
+        );
+        ack({ ok: true, url: options.voice.url, token, canTalk });
       } catch (error) {
         ack({ ok: false, error: error instanceof RoomError ? error.message : "Something went wrong" });
         if (!(error instanceof RoomError)) log.error(error);
