@@ -1,7 +1,7 @@
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { Server } from "socket.io";
 import { Leaderboard } from "./leaderboard.js";
-import { groqComplete, type Complete } from "./replies.js";
+import { DEFAULT_GROQ_MODEL, groqComplete, type Complete } from "./replies.js";
 import { RoomManager } from "./rooms.js";
 import { attachSockets, type GameServer } from "./sockets.js";
 import { MemoryStore, type RoomStore } from "./store.js";
@@ -15,7 +15,7 @@ const withScheme = (origin: string) => (/^https?:\/\//.test(origin) ? origin : `
 
 /** Bots answer chat through Groq when a key is set; the model can be swapped without a code change. */
 const groqFromEnv = (log: (error: unknown) => void): Complete | undefined =>
-  process.env.GROQ_API_KEY ? groqComplete(process.env.GROQ_API_KEY, process.env.GROQ_MODEL ?? "llama-3.1-8b-instant", log) : undefined;
+  process.env.GROQ_API_KEY ? groqComplete(process.env.GROQ_API_KEY, process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL, log) : undefined;
 
 export function buildServer(options: FastifyServerOptions & { botDelayMs?: number; store?: RoomStore; complete?: Complete | null } = {}) {
   const { botDelayMs = Number(process.env.BOT_DELAY_MS ?? 700), store = new MemoryStore(), complete, ...fastifyOptions } = options;

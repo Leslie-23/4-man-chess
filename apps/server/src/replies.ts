@@ -20,23 +20,38 @@ export interface PromptMessage {
 export type Complete = (messages: PromptMessage[]) => Promise<string | null>;
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+/** Groq's suggested replacement for the retired Llama 3.1 8B Instant. Override with GROQ_MODEL. */
+export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b";
 const TIMEOUT_MS = 8000;
 /** Chat lines the bot sees for context. */
 const HISTORY = 10;
 
-/** Chat completions from Groq's OpenAI-compatible API. */
+/**
+ * Chat completions from Groq's OpenAI-compatible API. Reasoning models (gpt-oss)
+ * think before they answer and that thinking counts against the token cap, so
+ * they're asked to think briefly, keep it out of the reply, and get room for both.
+ */
 export function groqComplete(apiKey: string, model: string, log: (error: unknown) => void = console.error): Complete {
+  const reasoning = model.startsWith("openai/gpt-oss");
   return async (messages) => {
     try {
       const response = await fetch(GROQ_URL, {
         method: "POST",
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({ model, messages, max_tokens: 80, temperature: 0.9 }),
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.9,
+          max_completion_tokens: reasoning ? 1024 : 200,
+          ...(reasoning && { reasoning_effort: "low", include_reasoning: false }),
+        }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (!response.ok) throw new Error(`Groq replied ${response.status}: ${(await response.text()).slice(0, 200)}`);
-      const body = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-      return body.choices?.[0]?.message?.content ?? null;
+      if (!response.ok) throw new Error(`Groq replied ${response.status}: ${(await response.text()).slice(0, 300)}`);
+      const body = (await response.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[] };
+      const choice = body.choices?.[0];
+      if (!choice?.message?.content?.trim()) throw new Error(`Groq sent an empty reply (finish_reason: ${choice?.finish_reason ?? "none"}, model ${model})`);
+      return choice.message.content;
     } catch (error) {
       log(error);
       return null;

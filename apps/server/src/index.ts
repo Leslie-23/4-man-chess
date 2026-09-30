@@ -1,6 +1,7 @@
 import { networkInterfaces } from "node:os";
 import { DEFAULT_SERVER_PORT } from "@fourman/shared";
 import { buildServer } from "./app.js";
+import { DEFAULT_GROQ_MODEL } from "./replies.js";
 import { MemoryStore, MongoStore, type RoomStore } from "./store.js";
 
 const port = Number(process.env.PORT ?? DEFAULT_SERVER_PORT);
@@ -11,7 +12,7 @@ const store: RoomStore = process.env.MONGODB_URI
   : new MemoryStore();
 const { app, restore } = buildServer({ logger: true, store });
 const resumed = await restore();
-app.log.info(process.env.GROQ_API_KEY ? `Bots answer chat with Groq (${process.env.GROQ_MODEL ?? "llama-3.1-8b-instant"})` : "No GROQ_API_KEY: bots only use canned chat lines");
+app.log.info(process.env.GROQ_API_KEY ? `Bots answer chat with Groq (${process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL})` : "No GROQ_API_KEY: bots only use canned chat lines");
 app.log.info(process.env.MONGODB_URI ? `MongoDB connected; resumed ${resumed} unfinished game(s)` : "No MONGODB_URI: rooms are kept in memory only");
 
 await app.listen({ port, host: "0.0.0.0" });
