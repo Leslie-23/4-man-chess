@@ -4,7 +4,7 @@ import { BOT_LEVELS, chooseBotMove, createGame, getVariant, type BotLevel, type 
 import type { RoomView, SeatPlan } from "@fourman/shared";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Board } from "../../../components/Board";
 import { Chat } from "../../../components/Chat";
 import { Segmented, ThemePicker } from "../../../components/Controls";
@@ -13,6 +13,7 @@ import { PlayerPlate } from "../../../components/PlayerPlate";
 import { SeatPlanner } from "../../../components/SeatPlanner";
 import { Standings } from "../../../components/Standings";
 import { TopBar } from "../../../components/TopBar";
+import { WinCelebration } from "../../../components/WinCelebration";
 import { useHints } from "../../../lib/hints";
 import { useLocalSetting } from "../../../lib/settings";
 import { useVoice } from "../../../lib/useVoice";
@@ -26,6 +27,15 @@ const AUTO_DELAY_MS = 800;
 const LEVEL_OPTIONS = BOT_LEVELS.map((l) => ({ value: l, label: BOT_LEVEL_INFO[l].name }));
 const label = (c: PlayerColor) => c[0]!.toUpperCase() + c.slice(1);
 const ON_OFF = ["on", "off"] as const;
+/** Army colours for canvas drawing, matching the CSS tokens. */
+const ARMY_HEX: Record<PlayerColor, string> = {
+  red: "#d7362d",
+  blue: "#2b6be0",
+  yellow: "#e0a810",
+  green: "#229a4f",
+  white: "#9a9a92",
+  black: "#1b1b1b",
+};
 /** Stands in for the game until the room arrives, so hooks run in the same order every render. */
 const EMPTY_STATE = createGame();
 
@@ -70,6 +80,13 @@ function Room({ id, name }: { id: string; name: string }) {
   const { room, color, connected, error, move, start, resign, say, startPoll, vote, askCoach, turnDeadline, pollDeadline } = useRoom(id, name);
   const secondsLeft = useCountdown(turnDeadline);
   const voice = useVoice(id);
+  // Celebrate when we see the game end live, not every time a finished room is reopened.
+  const [celebrate, setCelebrate] = useState(false);
+  const lastPhase = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastPhase.current === "playing" && room?.phase === "finished") setCelebrate(true);
+    lastPhase.current = room?.phase ?? null;
+  }, [room?.phase]);
   const [advice, setAdvice] = useState<{ text: string; ply: number } | null>(null);
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coaching, setCoaching] = useState(false);
@@ -175,6 +192,15 @@ function Room({ id, name }: { id: string; name: string }) {
         </div>
         <span className={connected ? "conn live" : "conn"}>{connected ? "Live" : "Reconnecting"}</span>
       </TopBar>
+
+      {celebrate && (
+        <WinCelebration
+          name={state.winner ? who(state.winner) : null}
+          color={state.winner ? ARMY_HEX[state.winner] : null}
+          isYou={state.winner !== null && state.winner === color}
+          onClose={() => setCelebrate(false)}
+        />
+      )}
 
       <main className="game">
         {/* Left: how the game is going. */}

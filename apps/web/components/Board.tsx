@@ -10,6 +10,7 @@ import {
   type Piece,
   type PieceType,
   type PlayerColor,
+  type PromotionPiece,
   type Variant,
 } from "@fourman/game-engine";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
@@ -51,13 +52,16 @@ export function seatsFrom(variant: Variant, perspective: PlayerColor): PlayerCol
 /** Selection, legal targets and highlights shared by every board shape. */
 function useBoardState(state: GameState, playable: PlayerColor | null, onMove?: (move: MoveInput) => void, hints?: BoardHints) {
   const [selected, setSelected] = useState<string | null>(null);
+  // A pawn move to the last rank waits here while the player picks what it becomes.
+  const [promoting, setPromoting] = useState<{ from: string; to: string } | null>(null);
   // Any new position from the server clears a stale selection.
-  useEffect(() => setSelected(null), [state.ply, state.eliminations.length]);
+  useEffect(() => {
+    setSelected(null);
+    setPromoting(null);
+  }, [state.ply, state.eliminations.length]);
 
-  const targets = useMemo(
-    () => new Set(selected ? getLegalMoves(state, selected).map((m) => m.to) : []),
-    [state, selected],
-  );
+  const moves = useMemo(() => (selected ? getLegalMoves(state, selected) : []), [state, selected]);
+  const targets = useMemo(() => new Set(moves.map((m) => m.to)), [moves]);
   const checkedKings = useMemo(() => {
     const active = activePlayers(state);
     return new Set(getVariant(state.variant).players.filter((c) => active.includes(c) && isInCheck(state, c)));
@@ -90,6 +94,7 @@ function useBoardState(state: GameState, playable: PlayerColor | null, onMove?: 
   const click = (square: string, piece: Piece | null) => {
     if (!onMove) return;
     if (selected && targets.has(square)) {
+      if (moves.some((m) => m.to === square && m.promotion)) return setPromoting({ from: selected, to: square });
       onMove({ from: selected, to: square });
       setSelected(null);
     } else {
@@ -97,7 +102,43 @@ function useBoardState(state: GameState, playable: PlayerColor | null, onMove?: 
     }
   };
 
-  return { classesFor, click };
+  const promote = (promotion: PromotionPiece) => {
+    if (!promoting || !onMove) return;
+    onMove({ ...promoting, promotion });
+    setPromoting(null);
+    setSelected(null);
+  };
+  const picker = promoting && playable && (
+    <PromotionPicker color={playable} onPick={promote} onCancel={() => setPromoting(null)} />
+  );
+
+  return { classesFor, click, picker };
+}
+
+const PROMOTIONS: readonly PromotionPiece[] = ["queen", "rook", "bishop", "knight"];
+
+/** Choose what a pawn on the last rank becomes. Esc or the backdrop cancels the move. */
+function PromotionPicker({ color, onPick, onCancel }: { color: PlayerColor; onPick: (p: PromotionPiece) => void; onCancel: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div className="promotion-backdrop" onClick={onCancel}>
+      <div className="promotion" role="dialog" aria-label="Promote your pawn" onClick={(e) => e.stopPropagation()}>
+        <span className="label">Promote to</span>
+        <div className="promotion-options">
+          {PROMOTIONS.map((p, i) => (
+            <button key={p} type="button" autoFocus={i === 0} onClick={() => onPick(p)} aria-label={p}>
+              <span className={`piece ${color}`}>{GLYPH[p]}</span>
+              <span className="promotion-name">{p}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function themeStyle(theme: BoardTheme): CSSProperties {
@@ -119,7 +160,7 @@ export function Board(props: BoardProps) {
 /* ---------- 2- and 4-player grids ---------- */
 
 function GridBoard({ state, perspective, theme, playable = null, onMove, plates = {}, hints, variant }: BoardProps & { variant: Variant }) {
-  const { classesFor, click } = useBoardState(state, playable, onMove, hints);
+  const { classesFor, click, picker } = useBoardState(state, playable, onMove, hints);
   if (variant.layout.kind !== "grid") return null;
   const { width, height, coords } = variant.layout;
   const seats = seatsFrom(variant, perspective);
@@ -171,7 +212,10 @@ function GridBoard({ state, perspective, theme, playable = null, onMove, plates 
     return (
       <div className={onMove ? "board-stack" : "board-stack static"} style={themeStyle(theme)}>
         {plates[seats[1]!] && <div className="stack-plate top">{plates[seats[1]!]}</div>}
-        <div className="board-wrap grid-2">{grid}</div>
+        <div className="board-wrap grid-2">
+          {grid}
+          {picker}
+        </div>
         {plates[seats[0]!] && <div className="stack-plate bottom">{plates[seats[0]!]}</div>}
       </div>
     );
@@ -182,6 +226,7 @@ function GridBoard({ state, perspective, theme, playable = null, onMove, plates 
   return (
     <div className={onMove ? "board-wrap" : "board-wrap static"} style={themeStyle(theme)}>
       {grid}
+      {picker}
       {seats.map((color, i) =>
         plates[color] ? (
           <div key={color} className={`corner ${corners[i]}`}>
@@ -218,7 +263,7 @@ function quadrant(theta: number, right: boolean): [Point, Point, Point, Point] {
 }
 
 function HexBoard({ state, perspective, theme, playable = null, onMove, plates = {}, hints, variant }: BoardProps & { variant: Variant }) {
-  const { classesFor, click } = useBoardState(state, playable, onMove, hints);
+  const { classesFor, click, picker } = useBoardState(state, playable, onMove, hints);
   const geometry = useMemo(() => {
     if (variant.layout.kind !== "hex") return [];
     const bottom = Math.max(0, variant.players.indexOf(perspective));
@@ -269,6 +314,7 @@ function HexBoard({ state, perspective, theme, playable = null, onMove, plates =
         })}
         <polygon points={outline} className="hex-outline" />
       </svg>
+      {picker}
       {seats.map((color, i) =>
         plates[color] ? (
           <div key={color} className={`corner hex-corner ${corners[i]}`}>
