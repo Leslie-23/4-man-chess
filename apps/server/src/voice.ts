@@ -19,8 +19,16 @@ export function voiceFromEnv(env = process.env): VoiceConfig | null {
  * board can light up whoever is speaking.
  */
 export async function voiceToken(config: VoiceConfig, roomId: string, seat: { color: PlayerColor; name: string } | { spectator: string; name: string }) {
-  const identity = "color" in seat ? seat.color : `watcher-${seat.spectator}`;
-  const token = new AccessToken(config.apiKey, config.apiSecret, { identity, name: seat.name, ttl: "4h" });
-  token.addGrant({ room: `fourman-${roomId}`, roomJoin: true, canSubscribe: true, canPublish: "color" in seat, canPublishData: false });
+  return voicePass(config, `fourman-${roomId}`, {
+    identity: "color" in seat ? seat.color : `watcher-${seat.spectator}`,
+    name: seat.name,
+    canTalk: "color" in seat,
+  });
+}
+
+/** A pass into any voice channel; each game names its own channels and identities. */
+export async function voicePass(config: VoiceConfig, channel: string, who: { identity: string; name: string; canTalk: boolean }) {
+  const token = new AccessToken(config.apiKey, config.apiSecret, { identity: who.identity, name: who.name, ttl: "4h" });
+  token.addGrant({ room: channel, roomJoin: true, canSubscribe: true, canPublish: who.canTalk, canPublishData: false });
   return token.toJwt();
 }

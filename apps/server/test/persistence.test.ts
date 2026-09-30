@@ -3,6 +3,7 @@ import type { ClientToServerEvents, RecentGame, RoomView, ServerToClientEvents }
 import { io as connect, type Socket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildServer } from "../src/app.js";
+import type { MonopolyRoom } from "../src/monopoly/rooms.js";
 import type { Room } from "../src/rooms.js";
 import type { RoomStore } from "../src/store.js";
 
@@ -26,6 +27,13 @@ class JsonStore implements RoomStore {
   }
   saveResult(game: RecentGame): void {
     this.results.set(game.id, JSON.stringify(game));
+  }
+  monopoly = new Map<string, string>();
+  async loadMonopoly(): Promise<MonopolyRoom[]> {
+    return [...this.monopoly.values()].map((r) => JSON.parse(r) as MonopolyRoom).filter((r) => r.phase !== "finished");
+  }
+  saveMonopoly(room: MonopolyRoom): void {
+    this.monopoly.set(room.id, JSON.stringify(room));
   }
   async close(): Promise<void> {}
 }
@@ -129,5 +137,23 @@ describe("persistence", () => {
       { key: "bot:hard", wins: 1, games: 1 },
       { key: "name:ada", wins: 0, games: 1 },
     ]);
+  });
+
+  it("brings a Tycoon game back after a restart", async () => {
+    const store = new JsonStore();
+    const first = await start(store);
+    const { io: connectTo } = await import("socket.io-client");
+    const host = connectTo(`${first.url}/monopoly`, { transports: ["websocket"], forceNew: true });
+    await new Promise<void>((r) => host.once("connect", () => r()));
+    const created = await host.emitWithAck("room:create", { name: "Ada", seats: ["friend"] });
+    if (!created.ok) throw new Error(created.error);
+    await new Promise((r) => setTimeout(r, 50));
+    host.disconnect();
+    await first.server.app.close();
+
+    const second = await start(store);
+    const room = second.server.monopoly.get(created.roomId);
+    expect(room.phase).toBe("lobby");
+    expect(room.seats[0]).toMatchObject({ name: "Ada", connections: 0 });
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import type { Action } from "@fourman/monopoly-engine";
-import type { AckResult, MonopolyRoomView } from "@fourman/shared";
+import type { AckResult, CoachTurn, MonopolyRoomView } from "@fourman/shared";
 import { useCallback, useEffect, useState } from "react";
 import { getSocket, loadToken, saveToken } from "./socket";
 
@@ -53,5 +53,10 @@ export function useRoom(roomId: string, name: string | null) {
     act: (action: Action) => send(getSocket().emitWithAck("game:act", { roomId: id, action })),
     start: () => send(getSocket().emitWithAck("game:start", { roomId: id })),
     say: (text: string): Promise<AckResult> => getSocket().emitWithAck("chat:send", { roomId: id, text }),
+    askCoach: (question: string, history: CoachTurn[]) =>
+      getSocket()
+        .timeout(25_000)
+        .emitWithAck("coach:ask", { roomId: id, question, history })
+        .catch((): AckResult<{ answer: string }> => ({ ok: false, error: "The coach didn't answer in time" })),
   };
 }

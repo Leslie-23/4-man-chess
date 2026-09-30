@@ -234,8 +234,9 @@ describe("multiplayer sockets", () => {
     const room = await done;
     expect(room.chat[0]).toMatchObject({ bot: true, color: "blue" });
     expect(room.chat.every((m) => m.bot)).toBe(true);
-    const winner = room.state.winner!;
-    expect(room.chat.some((m) => m.color === winner)).toBe(true);
+    // Bot games can end in a draw; when someone wins, they say so.
+    const winner = room.state.winner;
+    if (winner) expect(room.chat.some((m) => m.color === winner)).toBe(true);
   }, 30_000);
 
   it("ranks finished games on the leaderboard, one row per bot level", async () => {

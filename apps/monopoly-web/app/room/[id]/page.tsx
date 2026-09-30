@@ -3,14 +3,20 @@
 import { currentActor } from "@fourman/monopoly-engine";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+
+const ON_OFF = ["on", "off"] as const;
 import { ActionPanel } from "../../../components/ActionPanel";
 import { Board } from "../../../components/Board";
 import { Chat } from "../../../components/Chat";
+import { CoachCard, HintsCard, HowToPlay, hintTiles, useSuggestion } from "../../../components/Helpers";
 import { Log, MyProperties, Players, TileInfo } from "../../../components/SidePanels";
 import { TopBar } from "../../../components/TopBar";
 import { TradeBuilder, TradeOffer } from "../../../components/Trade";
-import { TOKEN, tokenColor } from "../../../lib/look";
+import { WorthChart } from "../../../components/WorthChart";
+import { TOKEN, money, tokenColor } from "../../../lib/look";
+import { useLocalSetting } from "../../../lib/settings";
+import { useVoice } from "../../../lib/useVoice";
 import { loadName, saveName } from "../../../lib/socket";
 import { useRoom } from "../../../lib/useRoom";
 
@@ -48,7 +54,12 @@ export default function RoomPage() {
 }
 
 function Room({ id, name }: { id: string; name: string }) {
-  const { room, seat, me, connected, error, act, start, say } = useRoom(id, name);
+  const { room, seat, me, connected, error, act, start, say, askCoach } = useRoom(id, name);
+  const voice = useVoice(id);
+  const [hintSetting, setHintSetting] = useLocalSetting<"on" | "off">("tycoon:hints", "off", ON_OFF);
+  const hintsOn = hintSetting === "on";
+  const suggestion = useSuggestion(room?.state ?? null, me, hintsOn);
+  const hinted = useMemo(() => (room?.state ? hintTiles(room.state, suggestion) : new Set<number>()), [room?.state, suggestion]);
   const [selected, setSelected] = useState<number | null>(null);
   const [trading, setTrading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -121,32 +132,34 @@ function Room({ id, name }: { id: string; name: string }) {
   }
 
   const state = room.state;
-  const myTurn = me !== null && currentActor(state) === me && !state.trade;
+  const actor = currentActor(state);
+  const myTurn = me !== null && actor === me && !state.trade;
   const canOffer = myTurn && (state.phase === "roll" || state.phase === "end") && !state.offered;
   const out = me ? state.players.find((p) => p.id === me)?.bankrupt : false;
+  const playing = me !== null && !out && state.phase !== "finished";
+  const status =
+    state.phase === "finished"
+      ? state.winner === me
+        ? "You win!"
+        : `${state.winner ? names(state.winner) : "Nobody"} wins`
+      : state.trade
+        ? state.trade.to === me
+          ? "Answer the trade offer"
+          : `${names(state.trade.to)} is weighing a trade`
+        : myTurn
+          ? "Your move"
+          : `${actor ? names(actor) : ""}'s move`;
 
   return (
-    <div className="app">
+    <div className="app room-app">
       {topbar}
       <main className="game">
-        <section className="board-area">
-          <Board state={state} selected={selected} onSelect={(t) => setSelected(t === selected ? null : t)}>
-            <ActionPanel state={state} me={me} names={names} act={act} />
-            {selected !== null && (
-              <div className="table-info">
-                <TileInfo state={state} tile={selected} names={names} />
-                <button type="button" className="tiny" onClick={() => setSelected(null)}>Close</button>
-              </div>
-            )}
-          </Board>
-          {error && <p className="error">{error}</p>}
-        </section>
-
-        <aside className="side">
-          <TradeOffer state={state} me={me} names={names} act={act} />
+        {/* Left: who's winning and how the game is going. */}
+        <aside className="rail rail-left" aria-label="Standings">
           <div className="block">
-            <h2 className="label">Players</h2>
-            <Players state={state} me={me} />
+            <h2 className="label">Standings</h2>
+            <Players state={state} me={me} onVoice={voice.present} speaking={voice.speaking} />
+            <WorthChart state={state} names={names} />
           </div>
           {me && !out && (
             <div className="block">
@@ -159,12 +172,72 @@ function Room({ id, name }: { id: string; name: string }) {
               <MyProperties state={state} me={me} act={act} />
             </div>
           )}
-          {seat === null && <p className="blurb">You're watching this game.</p>}
-          <details className="block fold" open>
+          <details className="block fold">
             <summary className="label">What's happened</summary>
             <Log state={state} names={names} />
           </details>
-          <div className="block">
+          <details className="block fold">
+            <summary className="label">How to play</summary>
+            <HowToPlay turnLimit={state.options.turnLimit} />
+          </details>
+        </aside>
+
+        {/* Centre: the table, with this player's helpers side by side underneath. */}
+        <section className="board-col">
+          <Board state={state} selected={selected} onSelect={(t) => setSelected(t === selected ? null : t)} hinted={hinted} speaking={voice.speaking}>
+            <ActionPanel state={state} me={me} names={names} act={act} />
+            {selected !== null && (
+              <div className="table-info">
+                <TileInfo state={state} tile={selected} names={names} />
+                <button type="button" className="tiny" onClick={() => setSelected(null)}>Close</button>
+              </div>
+            )}
+          </Board>
+          {playing && (
+            <div className="board-controls">
+              <HintsCard state={state} on={hintsOn} onToggle={(on) => setHintSetting(on ? "on" : "off")} suggestion={suggestion} act={act} />
+              {room.coach && <CoachCard ask={askCoach} />}
+            </div>
+          )}
+        </section>
+
+        {/* Right: what's happening now, voice, and the table's chat. */}
+        <aside className="rail rail-right" aria-label="Status and chat">
+          <div className={myTurn ? "status mine" : "status"}>
+            <span className="label">{state.phase === "finished" ? "Game over" : `Turn ${state.turn}${state.options.turnLimit ? ` of ${state.options.turnLimit}` : ""}`}</span>
+            <p>{status}</p>
+            {me && !out && <span className="status-cash">{money(state.players.find((p) => p.id === me)!.cash)} in hand</span>}
+          </div>
+          {error && <p className="error">{error}</p>}
+          <TradeOffer state={state} me={me} names={names} act={act} />
+          {seat === null && <p className="blurb">You're watching this game.</p>}
+          {room.voice && (
+            <div className="block voice">
+              <h2 className="label">Voice</h2>
+              {voice.status === "on" ? (
+                <>
+                  <p className="voice-line">
+                    <span className="voice-dot" /> {voice.present.size === 1 ? "Just you so far" : `${voice.present.size} at the table`}
+                    {!voice.canTalk && " · you're listening"}
+                  </p>
+                  <div className="row">
+                    {voice.canTalk && (
+                      <button type="button" className={voice.muted ? "primary" : undefined} onClick={() => void voice.toggleMute()}>
+                        {voice.muted ? "Unmute" : "Mute"}
+                      </button>
+                    )}
+                    <button type="button" onClick={voice.leave}>Leave voice</button>
+                  </div>
+                </>
+              ) : (
+                <button type="button" className="primary wide" disabled={voice.status === "joining"} onClick={() => void voice.join()}>
+                  {voice.status === "joining" ? "Joining…" : seat !== null ? "Join voice" : "Listen in"}
+                </button>
+              )}
+              {voice.error && <p className="error">{voice.error}</p>}
+            </div>
+          )}
+          <div className="block chat-block">
             <h2 className="label">Table talk</h2>
             <Chat messages={room.chat} onSend={say} />
           </div>

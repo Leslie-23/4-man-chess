@@ -38,8 +38,10 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
   rooms.coach = Boolean(replies);
   rooms.voice = Boolean(voice);
   // Monopoly lives beside chess on the same server, on its own namespace.
-  const monopoly = new MonopolyRooms();
-  attachMonopoly(io.of(MONOPOLY_NAMESPACE) as unknown as MonopolyNamespace, monopoly, app.log, { botDelayMs });
+  const monopoly = new MonopolyRooms((room) => store.saveMonopoly(room));
+  const resumeMonopoly = attachMonopoly(io.of(MONOPOLY_NAMESPACE) as unknown as MonopolyNamespace, monopoly, app.log, { botDelayMs, complete: replies, voice });
+  monopoly.coach = Boolean(replies);
+  monopoly.voice = Boolean(voice);
   const resumeBots = attachSockets(io, rooms, app.log, { botDelayMs, leaderboard, complete: replies, voice });
 
   /** Loads unfinished games from the store and lets any bot whose turn it is carry on. */
@@ -48,6 +50,9 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
     const saved = await store.loadActive(RESUME_MS);
     rooms.restore(saved);
     saved.forEach(resumeBots);
+    const savedMonopoly = await store.loadMonopoly(RESUME_MS);
+    monopoly.restore(savedMonopoly);
+    savedMonopoly.forEach(resumeMonopoly);
     return saved.length;
   };
 
@@ -59,7 +64,9 @@ export function buildServer(options: FastifyServerOptions & { botDelayMs?: numbe
   }, 10 * 60 * 1000).unref();
   app.addHook("preClose", async () => {
     clearInterval(sweeper);
+    // Every namespace, or Fastify waits on open Tycoon sockets and never finishes closing.
     io.disconnectSockets(true);
+    io.of(MONOPOLY_NAMESPACE).disconnectSockets(true);
   });
   app.addHook("onClose", async () => store.close());
 

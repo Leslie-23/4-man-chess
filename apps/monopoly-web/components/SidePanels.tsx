@@ -4,17 +4,18 @@ import { BOARD, currentActor, groupOf, netWorth, rentFor, unmortgageCost, type A
 import { GROUP_COLOR, money, tokenColor } from "../lib/look";
 
 /** Everyone at the table: cash, net worth, and who's in jail or out. */
-export function Players({ state, me }: { state: GameState; me: string | null }) {
+export function Players({ state, me, onVoice, speaking }: { state: GameState; me: string | null; onVoice?: ReadonlySet<string>; speaking?: ReadonlySet<string> }) {
   const current = state.players[state.current]!.id;
   const ranked = [...state.players].sort((a, b) => netWorth(state, b.id) - netWorth(state, a.id));
   return (
     <ol className="players">
       {ranked.map((p) => (
         <li key={p.id} className={[p.id === current && "current", p.bankrupt && "out", p.id === me && "me"].filter(Boolean).join(" ")}>
-          <i className="token" style={{ background: tokenColor(p.id) }}>{p.name[0]}</i>
+          <i className={speaking?.has(p.id) ? "token speaking" : "token"} style={{ background: tokenColor(p.id) }}>{p.name[0]}</i>
           <span className="player-name">
-            {p.name}
+            <span className="rank-name">{p.name}</span>
             {p.id === me && <span className="tag">you</span>}
+            {onVoice?.has(p.id) && <span className="tag">🎙</span>}
             {p.inJail && <span className="tag">jail</span>}
             {p.jailCards > 0 && <span className="tag">🗝 {p.jailCards}</span>}
           </span>

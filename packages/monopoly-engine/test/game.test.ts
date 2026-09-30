@@ -192,4 +192,13 @@ describe("trading", () => {
     expect(state.phase).toBe("finished");
     expect(state.winner).toBe(BO);
   });
+
+  it("records everyone's net worth each turn for the chart", () => {
+    let state = newGame();
+    expect(state.worth).toEqual([{ turn: 1, values: { ada: 1500, bo: 1500 } }]);
+    state = act(state, ADA, { type: "roll" }, rolls(2, 4));
+    state = act(state, ADA, { type: "buy" });
+    state = act(state, ADA, { type: "end-turn" });
+    expect(state.worth.at(-1)).toEqual({ turn: 2, values: { ada: 1500, bo: 1500 } });
+  });
 });

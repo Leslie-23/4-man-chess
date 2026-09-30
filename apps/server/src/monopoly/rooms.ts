@@ -66,7 +66,28 @@ function cleanOptions(raw: unknown): Partial<GameOptions> {
 export class MonopolyRooms {
   private rooms = new Map<string, MonopolyRoom>();
 
-  constructor(private random: () => number = Math.random) {}
+  /** Set by the server when the coach and voice chat are available. */
+  coach = false;
+  voice = false;
+
+  /** `onChange` hears about every change to a room, e.g. to save it. */
+  constructor(
+    private onChange: (room: MonopolyRoom) => void = () => {},
+    private random: () => number = Math.random,
+  ) {}
+
+  /** Puts saved rooms back into play; nobody is connected to them yet. */
+  restore(saved: MonopolyRoom[]): void {
+    for (const room of saved) {
+      room.seats = room.seats.map((s) => s && { ...s, connections: 0 });
+      if (room.state) room.state.worth ??= [];
+      this.rooms.set(room.id, room);
+    }
+  }
+
+  all(): MonopolyRoom[] {
+    return [...this.rooms.values()];
+  }
 
   create(name: unknown, plans: unknown, options: unknown) {
     if (!Array.isArray(plans) || plans.length + 1 < MONOPOLY_MIN_PLAYERS || plans.length + 1 > MONOPOLY_MAX_PLAYERS || !plans.every(isPlan)) {
@@ -181,6 +202,8 @@ export class MonopolyRooms {
       options: room.options,
       state: room.state,
       chat: room.chat,
+      coach: this.coach,
+      voice: this.voice,
     };
   }
 
@@ -223,5 +246,6 @@ export class MonopolyRooms {
 
   private touch(room: MonopolyRoom) {
     room.lastActivity = Date.now();
+    this.onChange(room);
   }
 }

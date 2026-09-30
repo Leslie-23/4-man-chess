@@ -1,4 +1,5 @@
 import type { RecentGame } from "@fourman/shared";
+import type { MonopolyRoom } from "./monopoly/rooms.js";
 import { MongoClient, type Collection } from "mongodb";
 import type { Room } from "./rooms.js";
 
@@ -14,6 +15,9 @@ export interface RoomStore {
   /** Every finished game, for the leaderboard. */
   loadResults(): Promise<RecentGame[]>;
   saveResult(game: RecentGame): void;
+  /** Tycoon rooms, kept the same way as chess rooms. */
+  loadMonopoly(maxAgeMs: number): Promise<MonopolyRoom[]>;
+  saveMonopoly(room: MonopolyRoom): void;
   close(): Promise<void>;
 }
 
@@ -27,10 +31,16 @@ export class MemoryStore implements RoomStore {
     return [];
   }
   saveResult(): void {}
+  async loadMonopoly(): Promise<MonopolyRoom[]> {
+    return [];
+  }
+  saveMonopoly(): void {}
   async close(): Promise<void> {}
 }
 
 type RoomDocument = Omit<Room, "id" | "lastActivity"> & { _id: string; lastActivity: Date; expiresAt: Date };
+type MonopolyDocument = Omit<MonopolyRoom, "id" | "lastActivity"> & { _id: string; lastActivity: Date; expiresAt: Date };
+
 /** Results are kept for good: the all-time leaderboard needs them. */
 type ResultDocument = Omit<RecentGame, "id" | "finishedAt"> & { _id: string; finishedAt: Date };
 
@@ -47,6 +57,7 @@ export class MongoStore implements RoomStore {
     private client: MongoClient,
     private rooms: Collection<RoomDocument>,
     private results: Collection<ResultDocument>,
+    private monopoly: Collection<MonopolyDocument>,
   ) {}
 
   static async connect(uri: string, dbName = "fourman"): Promise<MongoStore> {
@@ -57,7 +68,10 @@ export class MongoStore implements RoomStore {
     await rooms.createIndex({ phase: 1, lastActivity: -1 });
     const results = client.db(dbName).collection<ResultDocument>("results");
     await results.createIndex({ finishedAt: -1 });
-    return new MongoStore(client, rooms, results);
+    const monopoly = client.db(dbName).collection<MonopolyDocument>("monopoly_rooms");
+    await monopoly.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await monopoly.createIndex({ phase: 1, lastActivity: -1 });
+    return new MongoStore(client, rooms, results, monopoly);
   }
 
   async loadActive(maxAgeMs: number): Promise<Room[]> {
@@ -119,6 +133,36 @@ export class MongoStore implements RoomStore {
       )
       .finally(() => this.pendingResults.delete(write));
     this.pendingResults.add(write);
+  }
+
+  async loadMonopoly(maxAgeMs: number): Promise<MonopolyRoom[]> {
+    const docs = await this.monopoly
+      .find({ phase: { $ne: "finished" }, lastActivity: { $gt: new Date(Date.now() - maxAgeMs) } })
+      .toArray();
+    return docs.map(({ _id, lastActivity, expiresAt: _expires, ...rest }) => ({ ...rest, id: _id, lastActivity: lastActivity.getTime() }));
+  }
+
+  /** Same write-behind as chess rooms: one write per room at a time, and a changed-meanwhile room is written again. */
+  saveMonopoly(room: MonopolyRoom): void {
+    const key = `monopoly:${room.id}`;
+    if (this.writing.has(key)) {
+      this.dirty.add(key);
+      return;
+    }
+    const run = async () => {
+      do {
+        this.dirty.delete(key);
+        const { id, lastActivity, ...rest } = room;
+        const doc: MonopolyDocument = { ...structuredClone(rest), _id: id, lastActivity: new Date(lastActivity), expiresAt: new Date(lastActivity + KEEP_MS) };
+        try {
+          await this.monopoly.replaceOne({ _id: id }, doc, { upsert: true });
+        } catch (error) {
+          console.error(`Saving Tycoon room ${id} to MongoDB failed:`, error);
+        }
+      } while (this.dirty.has(key));
+      this.writing.delete(key);
+    };
+    this.writing.set(key, run());
   }
 
   async close(): Promise<void> {

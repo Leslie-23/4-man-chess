@@ -89,4 +89,32 @@ describe("monopoly rooms", () => {
     expect(room.seats).toHaveLength(2);
     expect(room.state!.players.map((p) => p.id)).toEqual(["p0", "p1"]);
   });
+
+  it("coaches a player privately with the engine's suggestion, and hands out voice passes", async () => {
+    const prompts: { role: string; content: string }[][] = [];
+    const coached = buildServer({
+      botDelayMs: 60_000,
+      complete: async (m) => (prompts.push(m), "Roll the dice, then buy what you land on."),
+      voice: { url: "wss://example.livekit.cloud", apiKey: "key", apiSecret: "a-secret-that-is-long-enough-for-hs256" },
+    });
+    await coached.app.listen({ port: 0, host: "127.0.0.1" });
+    try {
+      const host: Client = connect(`http://127.0.0.1:${(coached.app.server.address() as AddressInfo).port}${MONOPOLY_NAMESPACE}`, { transports: ["websocket"], forceNew: true });
+      clients.push(host);
+      const first = nextUpdate(host, () => true);
+      const created = await host.emitWithAck("room:create", { name: "Ada", seats: ["hard"] });
+      if (!created.ok) throw new Error(created.error);
+      expect(await first).toMatchObject({ coach: true, voice: true });
+      const answer = await host.emitWithAck("coach:ask", { roomId: created.roomId, question: "What should I do?", history: [{ role: "user", content: "hi" }, { role: "assistant", content: "Hello!" }] });
+      expect(answer).toEqual({ ok: true, answer: "Roll the dice, then buy what you land on." });
+      expect(prompts[0]![0]!.content).toContain("Engine suggestion for this player: Roll the dice.");
+      expect(prompts[0]!.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
+      const pass = await host.emitWithAck("voice:token", { roomId: created.roomId });
+      if (!pass.ok) throw new Error(pass.error);
+      const claims = JSON.parse(Buffer.from(pass.token.split(".")[1]!, "base64url").toString());
+      expect(claims).toMatchObject({ sub: "p0", video: { room: `tycoon-${created.roomId}`, canPublish: true } });
+    } finally {
+      await coached.app.close();
+    }
+  });
 });

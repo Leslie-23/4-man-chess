@@ -133,7 +133,15 @@ export interface GameState {
   /** Counts every turn, for the log. */
   turn: number;
   log: LogEntry[];
+  /** Everyone's net worth at the start of each turn (thinned out in long games), for the "who's winning" chart. */
+  worth: WorthSample[];
   winner: string | null;
+}
+
+export interface WorthSample {
+  turn: number;
+  /** Net worth by player id; bankrupt players are 0. */
+  values: Record<string, number>;
 }
 
 export type Action =

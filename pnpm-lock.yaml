@@ -209,6 +209,9 @@ importers:
       '@fourman/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      livekit-client:
+        specifier: ^2.22.3
+        version: 2.22.3(@types/dom-mediacapture-record@1.0.22)
       next:
         specifier: ^16.3.6
         version: 16.3.6(@types/node@26.6.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

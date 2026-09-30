@@ -4,6 +4,8 @@ import { IllegalActionError, type Action, type CardDeck, type Deed, type GameOpt
 
 export const DEFAULT_OPTIONS: GameOptions = { startingCash: 1500, goSalary: 200, parkingJackpot: false, auctions: true, turnLimit: null };
 const LOG_KEPT = 200;
+/** Chart points kept; past this, every other old point is dropped, so long games still fit. */
+const WORTH_KEPT = 240;
 
 /** Returns a whole number in [0, n). `random` returns [0, 1), so games replay exactly with a seeded source. */
 const pickIndex = (random: () => number, n: number) => Math.floor(random() * n);
@@ -25,7 +27,7 @@ export function createGame(
   if (seats.length < 2 || seats.length > 8) throw new RangeError("A game needs 2 to 8 players");
   if (new Set(seats.map((s) => s.id)).size !== seats.length) throw new RangeError("Player ids must be unique");
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  return {
+  const state: GameState = {
     options: opts,
     players: seats.map((s) => ({ id: s.id, name: s.name, cash: opts.startingCash, position: 0, inJail: false, jailTurns: 0, jailCards: 0, bankrupt: false })),
     current: 0,
@@ -44,8 +46,16 @@ export function createGame(
     pot: 0,
     turn: 1,
     log: [],
+    worth: [],
     winner: null,
   };
+  sampleWorth(state);
+  return state;
+}
+
+function sampleWorth(d: GameState) {
+  d.worth.push({ turn: d.turn, values: Object.fromEntries(d.players.map((p) => [p.id, netWorth(d, p.id)])) });
+  if (d.worth.length > WORTH_KEPT) d.worth = d.worth.filter((_, i) => i % 2 === 0 || i === d.worth.length - 1);
 }
 
 /** The player who must act now: the bidder in an auction, a debtor, or whoever's turn it is. */
@@ -521,6 +531,7 @@ function goBankrupt(d: GameState, me: Player, creditor: Player | null) {
     d.phase = "finished";
     d.winner = left[0]!.id;
     d.log.push({ turn: d.turn, player: d.winner, text: "wins the game!" });
+    sampleWorth(d);
     return;
   }
   if (d.debts.length > 0) d.phase = "debt";
@@ -554,6 +565,7 @@ function nextTurn(d: GameState) {
   d.card = null;
   d.offered = false;
   d.turn++;
+  sampleWorth(d);
 }
 
 /** Time's up: whoever is worth most wins. */
@@ -564,6 +576,7 @@ function finishOnWorth(d: GameState) {
   d.winner = richest.id;
   d.trade = null;
   d.log.push({ turn: d.turn, player: richest.id, text: `wins on net worth (${netWorth(d, richest.id)}) as time runs out` });
+  sampleWorth(d);
 }
 
 /** Players still in, starting from seat `from`. */

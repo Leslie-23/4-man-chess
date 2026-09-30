@@ -29,6 +29,16 @@ export interface MonopolyRoomView {
   /** Null until the game starts. */
   state: GameState | null;
   chat: ChatMessage[];
+  /** The Groq-backed coach is switched on for this server. */
+  coach: boolean;
+  /** Voice chat (LiveKit) is set up on this server. */
+  voice: boolean;
+}
+
+/** One turn of the conversation with the coach, sent back with the next question for context. */
+export interface CoachTurn {
+  role: "user" | "assistant";
+  content: string;
 }
 
 export interface MonopolySeatGrant {
@@ -49,6 +59,10 @@ export interface MonopolyClientEvents {
   /** Any game action; the server checks it's this seat's move and that it's legal. */
   "game:act": (payload: { roomId: string; action: Action }, ack: Ack) => void;
   "chat:send": (payload: { roomId: string; text: string }, ack: Ack) => void;
+  /** Seated players: ask the coach anything about the rules or your position. The answer comes back only to you. */
+  "coach:ask": (payload: { roomId: string; question: string; history?: CoachTurn[] }, ack: Ack<{ answer: string }>) => void;
+  /** A pass into the room's voice channel: seated players talk, watchers listen. */
+  "voice:token": (payload: { roomId: string }, ack: Ack<{ url: string; token: string; canTalk: boolean }>) => void;
 }
 
 export interface MonopolyServerEvents {

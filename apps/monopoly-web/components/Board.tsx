@@ -21,12 +21,16 @@ interface BoardProps {
   /** Square the player tapped for details. */
   selected: number | null;
   onSelect: (tile: number) => void;
+  /** Squares a hint is pointing at. */
+  hinted?: ReadonlySet<number>;
+  /** Seat ids talking on voice right now; their tokens glow. */
+  speaking?: ReadonlySet<string>;
   /** Whatever sits in the middle of the table: dice, the action panel, the latest card. */
   children: ReactNode;
 }
 
 /** The 40-square ring with owners, buildings and tokens; the middle is the table. */
-export function Board({ state, selected, onSelect, children }: BoardProps) {
+export function Board({ state, selected, onSelect, hinted, speaking, children }: BoardProps) {
   const current = state.players[state.current]!;
   return (
     <div className="board">
@@ -34,7 +38,7 @@ export function Board({ state, selected, onSelect, children }: BoardProps) {
         const { row, col, side } = gridSpot(i);
         const deed = state.deeds[i];
         const here = state.players.filter((p) => !p.bankrupt && p.position === i);
-        const classes = ["tile", side, tile.kind, deed?.mortgaged && "mortgaged", selected === i && "selected", current.position === i && "current"];
+        const classes = ["tile", side, tile.kind, deed?.mortgaged && "mortgaged", selected === i && "selected", current.position === i && "current", hinted?.has(i) && "hinted"];
         return (
           <button
             key={i}
@@ -60,7 +64,7 @@ export function Board({ state, selected, onSelect, children }: BoardProps) {
             {here.length > 0 && (
               <span className="tokens">
                 {here.map((p) => (
-                  <i key={p.id} className={p.inJail ? "token jailed" : "token"} style={{ background: tokenColor(p.id) }} title={p.name}>
+                  <i key={p.id} className={["token", p.inJail && "jailed", speaking?.has(p.id) && "speaking"].filter(Boolean).join(" ")} style={{ background: tokenColor(p.id) }} title={p.name}>
                     {p.name[0]}
                   </i>
                 ))}
