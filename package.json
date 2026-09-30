@@ -1,0 +1,20 @@
+{
+  "name": "fourman-chess",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "bots": "pnpm --filter @fourman/bots start"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "turbo": "^2.11.5",
+    "typescript": "^7.0.2"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "engines": {
+    "node": ">=22"
+  }
+}
