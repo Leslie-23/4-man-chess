@@ -35,7 +35,9 @@ export function describeAction(state: GameState, action: Action | null): string 
       return "Roll the dice.";
     case "end-turn":
       return "End the turn.";
-    default:
-      return action.type;
+    case "accept":
+      return "Accept the trade.";
+    case "reject":
+      return "Turn the trade down.";
   }
 }

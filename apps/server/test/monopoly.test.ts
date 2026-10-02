@@ -37,6 +37,28 @@ const nextUpdate = (socket: Client, predicate: (room: MonopolyRoomView) => boole
   });
 
 describe("monopoly rooms", () => {
+  it("gives every seat its own animal, honouring picks and letting players swap", async () => {
+    const host = await client();
+    const created = await host.emitWithAck("room:create", { name: "Ada", animal: "owl", seats: ["friend", "hard"] });
+    if (!created.ok) throw new Error(created.error);
+    const view = () => server.monopoly.view(server.monopoly.get(created.roomId));
+    expect(view().seats[0]!.animal).toBe("owl");
+
+    const swapped = await host.emitWithAck("seat:animal", { roomId: created.roomId, animal: "fox" });
+    expect(swapped.ok).toBe(true);
+    const bot = view().seats[2]!.animal;
+    const clash = await host.emitWithAck("seat:animal", { roomId: created.roomId, animal: bot });
+    expect(clash).toEqual({ ok: false, error: "Someone already has that one" });
+
+    // Asking for a taken animal still seats you, with another one.
+    const guest = await client();
+    const joined = await guest.emitWithAck("room:join", { roomId: created.roomId, name: "Bo", animal: "fox" });
+    expect(joined.ok).toBe(true);
+    const animals = view().seats.map((s) => s!.animal);
+    expect(animals[0]).toBe("fox");
+    expect(new Set(animals).size).toBe(3);
+  });
+
   it("seats bots, starts, and lets bots play their turns after ours", async () => {
     const host = await client();
     const started = nextUpdate(host, (r) => r.phase === "playing");

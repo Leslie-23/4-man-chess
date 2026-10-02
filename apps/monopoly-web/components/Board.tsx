@@ -3,6 +3,7 @@
 import { BOARD, type GameState } from "@fourman/monopoly-engine";
 import type { ReactNode } from "react";
 import { GROUP_COLOR, gridSpot, money, tokenColor } from "../lib/look";
+import { Effigy } from "./Effigy";
 
 const ICON: Partial<Record<string, string>> = {
   go: "➜",
@@ -25,19 +26,22 @@ interface BoardProps {
   hinted?: ReadonlySet<number>;
   /** Seat ids talking on voice right now; their tokens glow. */
   speaking?: ReadonlySet<string>;
+  /** Force the board light or dark; left out, it follows the page. */
+  theme?: "light" | "dark";
   /** Whatever sits in the middle of the table: dice, the action panel, the latest card. */
   children: ReactNode;
 }
 
 /** The 40-square ring with owners, buildings and tokens; the middle is the table. */
-export function Board({ state, selected, onSelect, hinted, speaking, children }: BoardProps) {
+export function Board({ state, selected, onSelect, hinted, speaking, theme, children }: BoardProps) {
   const current = state.players[state.current]!;
   return (
-    <div className="board">
+    <div className="board" data-theme={theme}>
       {BOARD.map((tile, i) => {
         const { row, col, side } = gridSpot(i);
         const deed = state.deeds[i];
         const here = state.players.filter((p) => !p.bankrupt && p.position === i);
+        const owner = deed?.owner ? state.players.find((p) => p.id === deed.owner) : undefined;
         const classes = ["tile", side, tile.kind, deed?.mortgaged && "mortgaged", selected === i && "selected", current.position === i && "current", hinted?.has(i) && "hinted"];
         return (
           <button
@@ -46,7 +50,7 @@ export function Board({ state, selected, onSelect, hinted, speaking, children }:
             className={classes.filter(Boolean).join(" ")}
             style={{ gridRow: row, gridColumn: col, ...(deed?.owner && { "--owner": tokenColor(deed.owner) }) } as React.CSSProperties}
             onClick={() => onSelect(i)}
-            aria-label={`${tile.name}${deed?.owner ? `, owned by ${state.players.find((p) => p.id === deed.owner)?.name}` : ""}`}
+            aria-label={`${tile.name}${owner ? `, owned by ${owner.name}` : ""}`}
           >
             {tile.group && <span className="band" style={{ background: GROUP_COLOR[tile.group] }} />}
             {deed && deed.houses > 0 && (
@@ -60,13 +64,12 @@ export function Board({ state, selected, onSelect, hinted, speaking, children }:
             </span>
             {tile.price !== undefined && !deed?.owner && <span className="tile-price">{money(tile.price)}</span>}
             {tile.tax !== undefined && <span className="tile-price">{money(tile.tax)}</span>}
-            {deed?.owner && <span className="owner-flag" />}
+            {owner && <Effigy id={owner.id} name={`Owned by ${owner.name}`} className="owner-effigy" />}
+            {owner && <span className="owner-flag" />}
             {here.length > 0 && (
               <span className="tokens">
                 {here.map((p) => (
-                  <i key={p.id} className={["token", p.inJail && "jailed", speaking?.has(p.id) && "speaking"].filter(Boolean).join(" ")} style={{ background: tokenColor(p.id) }} title={p.name}>
-                    {p.name[0]}
-                  </i>
+                  <Effigy key={p.id} id={p.id} name={p.name} className={["on-board", p.inJail && "jailed", speaking?.has(p.id) && "speaking"].filter(Boolean).join(" ")} />
                 ))}
               </span>
             )}

@@ -106,7 +106,7 @@ export function attachMonopoly(nsp: MonopolyNamespace, rooms: MonopolyRooms, log
 
     socket.on("room:create", (payload, ack) =>
       handle(ack, () => {
-        const { room, seat, token } = rooms.create(payload?.name, payload?.seats, payload?.options);
+        const { room, seat, token } = rooms.create(payload?.name, payload?.seats, payload?.options, payload?.animal);
         enter(room, seat, payload?.name);
         return { room, reply: { roomId: room.id, seat, token } };
       }),
@@ -114,10 +114,14 @@ export function attachMonopoly(nsp: MonopolyNamespace, rooms: MonopolyRooms, log
 
     socket.on("room:join", (payload, ack) =>
       handle(ack, () => {
-        const { room, seat, token } = rooms.join(payload?.roomId, payload?.name, payload?.token);
+        const { room, seat, token } = rooms.join(payload?.roomId, payload?.name, payload?.token, payload?.animal);
         enter(room, seat, payload?.name);
         return { room, reply: { roomId: room.id, seat, token } };
       }),
+    );
+
+    socket.on("seat:animal", (payload, ack) =>
+      handle(ack, () => ({ room: rooms.setAnimal(payload?.roomId, seatIn(payload?.roomId), payload?.animal) })),
     );
 
     socket.on("game:start", (payload, ack) => handle(ack, () => ({ room: rooms.start(payload?.roomId, seatIn(payload?.roomId)) })));

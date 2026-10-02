@@ -1,6 +1,6 @@
 "use client";
 
-import { BOARD, chooseBotAction, currentActor, describeAction, type Action, type GameState } from "@fourman/monopoly-engine";
+import { BOARD, adviseMove, currentActor, type Action, type Advice, type GameState } from "@fourman/monopoly-engine";
 import type { AckResult, CoachTurn } from "@fourman/shared";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -14,30 +14,42 @@ export function actionTiles(state: GameState, action: Action | null): number[] {
   return [];
 }
 
-/** What the hard bot would do in our seat right now, worked out on this device. */
-export function useSuggestion(state: GameState | null, me: string | null, enabled: boolean): Action | null {
+/** What the hard bot would do in our seat right now, and why, worked out on this device. */
+export function useAdvice(state: GameState | null, me: string | null, enabled: boolean): Advice | null {
   return useMemo(() => {
     if (!enabled || !state || !me || currentActor(state) !== me) return null;
-    return chooseBotAction(state, me, () => 0.5, "hard");
+    return adviseMove(state, me);
   }, [state, me, enabled]);
 }
 
-/** The Hints card: a switch, and when it's our move, the move worth making and why it's on the board. */
-export function HintsCard({ state, on, onToggle, suggestion, act }: { state: GameState; on: boolean; onToggle: (on: boolean) => void; suggestion: Action | null; act: (a: Action) => Promise<boolean> }) {
+/** The Hints card: a switch, and when it's our move, the move worth making, the reasons, and what to watch. */
+export function HintsCard({ on, onToggle, advice, act }: { on: boolean; onToggle: (on: boolean) => void; advice: Advice | null; act: (a: Action) => Promise<boolean> }) {
   return (
     <div className="control-card">
       <label className="toggle">
         <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} />
         <span><strong>Hints</strong> {on ? "on" : "off"}</span>
       </label>
-      {!on && <p className="blurb">Suggests a good move on your turn and marks the square it's about.</p>}
-      {on && !suggestion && <p className="muted small">A suggestion appears when it's your move.</p>}
-      {on && suggestion && (
+      {!on && <p className="blurb">Suggests a good move on your turn, explains why, and marks the square it's about.</p>}
+      {on && !advice && <p className="muted small">A suggestion appears when it's your move.</p>}
+      {on && advice && (
         <>
-          <p className="hint-line">
-            <span className="hint-key" /> {describeAction(state, suggestion)}
-          </p>
-          <button type="button" className="tiny" onClick={() => void act(suggestion)}>Do it</button>
+          <div className="hint-head">
+            <p className="hint-line">
+              <span className="hint-key" /> <strong>{advice.headline}</strong>
+            </p>
+            <button type="button" className="tiny primary" onClick={() => void act(advice.action)}>Do it</button>
+          </div>
+          {advice.why.length > 0 && (
+            <ul className="hint-why">
+              {advice.why.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          )}
+          {advice.watch.length > 0 && (
+            <ul className="hint-watch" aria-label="Worth watching">
+              {advice.watch.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          )}
         </>
       )}
     </div>
@@ -115,4 +127,4 @@ export function HowToPlay({ turnLimit }: { turnLimit: number | null }) {
 }
 
 /** Tiles the board should mark for a hint. */
-export const hintTiles = (state: GameState, suggestion: Action | null) => new Set(actionTiles(state, suggestion).filter((t) => BOARD[t]));
+export const hintTiles = (state: GameState, advice: Advice | null) => new Set(actionTiles(state, advice?.action ?? null).filter((t) => BOARD[t]));

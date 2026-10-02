@@ -1,6 +1,6 @@
 "use client";
 
-import { DEFAULT_SERVER_PORT, MONOPOLY_NAMESPACE, type MonopolyClientEvents, type MonopolyServerEvents } from "@fourman/shared";
+import { DEFAULT_SERVER_PORT, MONOPOLY_NAMESPACE, isMonopolyAnimal, type MonopolyAnimal, type MonopolyClientEvents, type MonopolyServerEvents } from "@fourman/shared";
 import { io, type Socket } from "socket.io-client";
 
 export type MonopolySocket = Socket<MonopolyServerEvents, MonopolyClientEvents>;
@@ -44,3 +44,9 @@ export const loadName = () => read("fourman:name");
 export const saveName = (name: string) => write("fourman:name", name);
 export const loadToken = (roomId: string) => read(`monopoly:token:${roomId.toUpperCase()}`);
 export const saveToken = (roomId: string, token: string) => write(`monopoly:token:${roomId.toUpperCase()}`, token);
+/** The animal this player likes to play as; asked for whenever they join a room. */
+export const loadAnimal = (): MonopolyAnimal | null => {
+  const stored = read("tycoon:animal");
+  return isMonopolyAnimal(stored) ? stored : null;
+};
+export const saveAnimal = (animal: MonopolyAnimal) => write("tycoon:animal", animal);

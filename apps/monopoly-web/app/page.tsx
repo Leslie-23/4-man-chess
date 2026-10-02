@@ -1,12 +1,13 @@
 "use client";
 
 import type { BotLevel, GameOptions } from "@fourman/monopoly-engine";
-import { MONOPOLY_MAX_PLAYERS, type MonopolySeatPlan } from "@fourman/shared";
+import { MONOPOLY_MAX_PLAYERS, type MonopolyAnimal, type MonopolySeatPlan } from "@fourman/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { AnimalPicker, Effigy } from "../components/Effigy";
 import { TopBar } from "../components/TopBar";
 import { GAME_NAME, TAGLINE, TOKEN } from "../lib/look";
-import { getSocket, loadName, saveName, saveToken } from "../lib/socket";
+import { getSocket, loadAnimal, loadName, saveAnimal, saveName, saveToken } from "../lib/socket";
 
 const PLAN_LABEL: Record<MonopolySeatPlan, string> = { friend: "Friend", easy: "Easy bot", hard: "Hard bot" };
 const NEXT_PLAN: Record<MonopolySeatPlan, MonopolySeatPlan> = { friend: "easy", easy: "hard", hard: "friend" };
@@ -14,6 +15,7 @@ const NEXT_PLAN: Record<MonopolySeatPlan, MonopolySeatPlan> = { friend: "easy", 
 export default function Home() {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [animal, setAnimal] = useState<MonopolyAnimal | null>(null);
   const [seats, setSeats] = useState<MonopolySeatPlan[]>(["hard", "easy", "hard"]);
   const [cash, setCash] = useState<GameOptions["startingCash"]>(1500);
   const [turnLimit, setTurnLimit] = useState<number | null>(120);
@@ -21,18 +23,23 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setName(loadName() ?? ""), []);
+  useEffect(() => {
+    setName(loadName() ?? "");
+    setAnimal(loadAnimal());
+  }, []);
 
   const needName = () => {
-    if (name.trim()) return saveName(name.trim()), true;
-    setError("Type your name first");
-    return false;
+    if (!name.trim()) return setError("Type your name first"), false;
+    if (!animal) return setError("Pick your animal"), false;
+    saveName(name.trim());
+    saveAnimal(animal);
+    return true;
   };
 
   const create = async () => {
     if (!needName()) return;
     setBusy(true);
-    const result = await getSocket().emitWithAck("room:create", { name: name.trim(), seats, options: { startingCash: cash, turnLimit, parkingJackpot: jackpot } });
+    const result = await getSocket().emitWithAck("room:create", { name: name.trim(), animal: animal!, seats, options: { startingCash: cash, turnLimit, parkingJackpot: jackpot } });
     setBusy(false);
     if (!result.ok) return setError(result.error);
     if (result.token) saveToken(result.roomId, result.token);
@@ -68,16 +75,20 @@ export default function Home() {
             <span className="label">Your name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} maxLength={20} placeholder="Type your name" />
           </label>
+          <div className="field">
+            <span className="label">Your animal</span>
+            <AnimalPicker value={animal} onChange={setAnimal} />
+          </div>
 
           <div className="block">
             <h2 className="label">New game · {seats.length + 1} players</h2>
             <ul className="seat-list">
               <li>
-                <i className="token" style={{ background: TOKEN[0] }}>{(name || "Y")[0]}</i> You (host)
+                <Effigy name={name || "You"} animal={animal} color={TOKEN[0]} /> You (host)
               </li>
               {seats.map((plan, i) => (
                 <li key={i}>
-                  <i className="token" style={{ background: TOKEN[i + 1] }}>{i + 2}</i>
+                  <Effigy name={String(i + 2)} color={TOKEN[i + 1]} />
                   <button type="button" className="tiny" onClick={() => setSeats(seats.map((p, j) => (j === i ? NEXT_PLAN[p] : p)))}>
                     {PLAN_LABEL[plan]} ↻
                   </button>

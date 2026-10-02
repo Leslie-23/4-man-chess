@@ -2,7 +2,8 @@
 
 import { BOARD, JAIL_FINE, currentActor, type Action, type GameState } from "@fourman/monopoly-engine";
 import { useEffect, useState } from "react";
-import { money, tokenColor } from "../lib/look";
+import { money } from "../lib/look";
+import { Effigy } from "./Effigy";
 
 const PIPS: Record<number, number[]> = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
 
@@ -154,7 +155,7 @@ export function ActionPanel({ state, me, names, act }: Props) {
     <div className="panel">
       <div className="panel-head">
         <span className="whose">
-          <i className="token" style={{ background: tokenColor(player.id) }}>{player.name[0]}</i>
+          <Effigy id={player.id} name={player.name} />
           {mine && !state.trade ? "Your move" : `${names(player.id)}'s turn`}
         </span>
         {state.dice && (

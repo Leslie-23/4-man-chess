@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD, IllegalActionError, applyAction, chooseBotAction, createGame, currentActor, netWorth, rentFor, type Action, type GameState } from "../src/index.js";
+import { BOARD, IllegalActionError, adviseMove, applyAction, dangerAhead, chooseBotAction, createGame, currentActor, netWorth, rentFor, type Action, type GameState } from "../src/index.js";
 
 const seeded = (seed: number) => () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
 /** A "random" source that rolls exactly these dice, in order. */
@@ -200,5 +200,36 @@ describe("trading", () => {
     state = act(state, ADA, { type: "buy" });
     state = act(state, ADA, { type: "end-turn" });
     expect(state.worth.at(-1)).toEqual({ turn: 2, values: { ada: 1500, bo: 1500 } });
+  });
+});
+
+describe("hints", () => {
+  it("explains a buy that completes a set", () => {
+    const state = newGame();
+    own(state, ADA, 1);
+    state.players[0]!.position = 3;
+    state.phase = "buy";
+    const advice = adviseMove(state, ADA)!;
+    expect(advice.action).toEqual({ type: "buy" });
+    expect(advice.why.join(" ")).toContain("completes your brown set");
+  });
+
+  it("warns about rent within one roll, with the odds", () => {
+    const state = newGame();
+    own(state, BO, 6, 8, 9); // the sky set, 6–9 squares from Go
+    const danger = dangerAhead(state, ADA);
+    expect(danger.map((d) => d.tile)).toEqual(expect.arrayContaining([6, 8, 9]));
+    expect(danger.find((d) => d.tile === 8)).toMatchObject({ owner: BO, amount: 12, chance: 5 / 36 });
+    expect(adviseMove(state, ADA)!.watch[0]).toMatch(/This roll: \d+% chance of paying rent/);
+  });
+
+  it("points out a rival one square from a set", () => {
+    const state = newGame();
+    own(state, BO, 37);
+    expect(adviseMove(state, ADA)!.watch.join(" ")).toContain("Bo needs only Sapphire Point");
+  });
+
+  it("is null when it isn't your move", () => {
+    expect(adviseMove(newGame(), BO)).toBeNull();
   });
 });

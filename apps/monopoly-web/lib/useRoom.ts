@@ -1,9 +1,9 @@
 "use client";
 
 import type { Action } from "@fourman/monopoly-engine";
-import type { AckResult, CoachTurn, MonopolyRoomView } from "@fourman/shared";
+import type { AckResult, CoachTurn, MonopolyAnimal, MonopolyRoomView } from "@fourman/shared";
 import { useCallback, useEffect, useState } from "react";
-import { getSocket, loadToken, saveToken } from "./socket";
+import { getSocket, loadAnimal, loadToken, saveAnimal, saveToken } from "./socket";
 
 /** Joins `roomId` and mirrors the server's copy of it; every change arrives as a room:update. */
 export function useRoom(roomId: string, name: string | null) {
@@ -18,7 +18,7 @@ export function useRoom(roomId: string, name: string | null) {
     const socket = getSocket();
     const join = async () => {
       setConnected(true);
-      const result = await socket.emitWithAck("room:join", { roomId: id, name, token: loadToken(id) ?? undefined });
+      const result = await socket.emitWithAck("room:join", { roomId: id, name, animal: loadAnimal() ?? undefined, token: loadToken(id) ?? undefined });
       if (!result.ok) return setError(result.error);
       if (result.token) saveToken(id, result.token);
       setSeat(result.seat);
@@ -51,6 +51,11 @@ export function useRoom(roomId: string, name: string | null) {
     connected,
     error,
     act: (action: Action) => send(getSocket().emitWithAck("game:act", { roomId: id, action })),
+    /** Swap to another animal; remembered for next time too. */
+    setAnimal: (animal: MonopolyAnimal) => {
+      saveAnimal(animal);
+      return send(getSocket().emitWithAck("seat:animal", { roomId: id, animal }));
+    },
     start: () => send(getSocket().emitWithAck("game:start", { roomId: id })),
     say: (text: string): Promise<AckResult> => getSocket().emitWithAck("chat:send", { roomId: id, text }),
     askCoach: (question: string, history: CoachTurn[]) =>

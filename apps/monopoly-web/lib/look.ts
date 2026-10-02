@@ -35,3 +35,7 @@ export function gridSpot(i: number): { row: number; col: number; side: "bottom" 
 /** The public name. "Monopoly" is a trademark, so the site uses its own; change it here. */
 export const GAME_NAME = "Tycoon";
 export const TAGLINE = "A Monopoly-style property game for 2–6 players";
+
+/** The 3D picture for an animal token (Fluent Emoji, MIT; see public/animals/LICENSE.txt). */
+export const animalSrc = (animal: string) => `/animals/${animal}.png`;
+export const animalLabel = (animal: string) => animal[0]!.toUpperCase() + animal.slice(1);

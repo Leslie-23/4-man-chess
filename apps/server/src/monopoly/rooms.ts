@@ -13,9 +13,12 @@ import {
 } from "@fourman/monopoly-engine";
 import {
   MAX_CHAT_LENGTH,
+  MONOPOLY_ANIMALS,
   MONOPOLY_MAX_PLAYERS,
   MONOPOLY_MIN_PLAYERS,
+  isMonopolyAnimal,
   type ChatMessage,
+  type MonopolyAnimal,
   type MonopolyRoomView,
   type MonopolySeatPlan,
 } from "@fourman/shared";
@@ -23,6 +26,7 @@ import { RoomError } from "../rooms.js";
 
 interface Seat {
   name: string;
+  animal: MonopolyAnimal;
   token: string;
   connections: number;
   bot: BotLevel | null;
@@ -80,6 +84,8 @@ export class MonopolyRooms {
   restore(saved: MonopolyRoom[]): void {
     for (const room of saved) {
       room.seats = room.seats.map((s) => s && { ...s, connections: 0 });
+      // Rooms saved before animal tokens existed get one each.
+      room.seats.forEach((s) => s && !isMonopolyAnimal(s.animal) && (s.animal = this.freeAnimal(room.seats, null)));
       if (room.state) room.state.worth ??= [];
       this.rooms.set(room.id, room);
     }
@@ -89,14 +95,14 @@ export class MonopolyRooms {
     return [...this.rooms.values()];
   }
 
-  create(name: unknown, plans: unknown, options: unknown) {
+  create(name: unknown, plans: unknown, options: unknown, animal?: unknown) {
     if (!Array.isArray(plans) || plans.length + 1 < MONOPOLY_MIN_PLAYERS || plans.length + 1 > MONOPOLY_MAX_PLAYERS || !plans.every(isPlan)) {
       throw new RoomError(`Pick ${MONOPOLY_MIN_PLAYERS - 1} to ${MONOPOLY_MAX_PLAYERS - 1} other seats`);
     }
     let id: string;
     do id = Array.from({ length: 5 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
     while (this.rooms.has(id));
-    const host = this.newSeat(name, null);
+    const host = this.newSeat(name, null, this.freeAnimal([], animal));
     const room: MonopolyRoom = {
       id,
       phase: "lobby",
@@ -109,7 +115,9 @@ export class MonopolyRooms {
       lastActivity: Date.now(),
     };
     const used = new Set<string>();
-    (plans as MonopolySeatPlan[]).forEach((plan) => room.seats.push(plan === "friend" ? null : this.newSeat(this.botName(plan, used), plan)));
+    (plans as MonopolySeatPlan[]).forEach((plan) =>
+      room.seats.push(plan === "friend" ? null : this.newSeat(this.botName(plan, used), plan, this.freeAnimal(room.seats, null))),
+    );
     this.rooms.set(id, room);
     this.startIfFull(room);
     return { room, seat: 0, token: host.token };
@@ -121,16 +129,29 @@ export class MonopolyRooms {
     return room;
   }
 
-  join(roomId: unknown, name: unknown, token?: unknown) {
+  join(roomId: unknown, name: unknown, token?: unknown, animal?: unknown) {
     const room = this.get(roomId);
     const back = room.seats.findIndex((s) => typeof token === "string" && s?.token === token);
     if (back >= 0) return { room, seat: back, token: token as string };
     const free = room.phase === "lobby" ? room.seats.findIndex((s, i) => !s && room.plan[i] === "friend") : -1;
     if (free < 0) return { room, seat: null, token: null };
-    const seat = this.newSeat(name, null);
+    const seat = this.newSeat(name, null, this.freeAnimal(room.seats, animal));
     room.seats[free] = seat;
     this.startIfFull(room);
     return { room, seat: free, token: seat.token };
+  }
+
+  /** Swaps a seated player's animal for one nobody else at the table has. */
+  setAnimal(roomId: unknown, seat: number | null, animal: unknown): MonopolyRoom {
+    const room = this.get(roomId);
+    const s = seat === null ? null : room.seats[seat];
+    if (!s) throw new RoomError("Take a seat first");
+    if (room.phase === "finished") throw new RoomError("The game is over");
+    if (!isMonopolyAnimal(animal)) throw new RoomError("Pick one of the animals");
+    if (room.seats.some((o) => o && o !== s && o.animal === animal)) throw new RoomError("Someone already has that one");
+    s.animal = animal;
+    this.touch(room);
+    return room;
   }
 
   start(roomId: unknown, seat: number | null): MonopolyRoom {
@@ -197,7 +218,7 @@ export class MonopolyRooms {
       id: room.id,
       phase: room.phase,
       host: room.host,
-      seats: room.seats.map((s, i) => (s ? { id: seatId(i), name: s.name, connected: s.bot !== null || s.connections > 0, bot: s.bot } : null)),
+      seats: room.seats.map((s, i) => (s ? { id: seatId(i), name: s.name, animal: s.animal, connected: s.bot !== null || s.connections > 0, bot: s.bot } : null)),
       plan: [...room.plan],
       options: room.options,
       state: room.state,
@@ -233,8 +254,16 @@ export class MonopolyRooms {
     else this.touch(room);
   }
 
-  private newSeat(name: unknown, bot: BotLevel | null): Seat {
-    return { name: cleanName(name), token: randomUUID(), connections: 0, bot };
+  private newSeat(name: unknown, bot: BotLevel | null, animal: MonopolyAnimal): Seat {
+    return { name: cleanName(name), animal, token: randomUUID(), connections: 0, bot };
+  }
+
+  /** `wanted` if it's a real animal nobody in `seats` has; otherwise a random free one. */
+  private freeAnimal(seats: (Seat | null)[], wanted: unknown): MonopolyAnimal {
+    const taken = new Set(seats.map((s) => s?.animal));
+    if (isMonopolyAnimal(wanted) && !taken.has(wanted)) return wanted;
+    const free = MONOPOLY_ANIMALS.filter((a) => !taken.has(a));
+    return free[Math.floor(this.random() * free.length)] ?? MONOPOLY_ANIMALS[0];
   }
 
   private botName(level: BotLevel, used: Set<string>): string {

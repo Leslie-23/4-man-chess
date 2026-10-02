@@ -5,7 +5,7 @@ import type { Action, GameState, Player, Trade } from "./types.js";
 export type BotLevel = "easy" | "hard";
 
 /** Cash a bot keeps in hand for rent, so one bad landing doesn't bankrupt it. */
-const RESERVE: Record<BotLevel, number> = { easy: 50, hard: 150 };
+export const RESERVE: Record<BotLevel, number> = { easy: 50, hard: 150 };
 
 /**
  * What a bot does when it's `id`'s move. Returns null if it isn't. Pass
@@ -34,8 +34,7 @@ export function chooseBotAction(state: GameState, id: string, random: () => numb
 
     case "auction": {
       const auction = state.auction!;
-      const tile = BOARD[auction.tile]!;
-      const worth = tile.price! * (level === "easy" ? 0.8 : completesSet(state, me, auction.tile) || blocksSet(state, me, auction.tile) ? 1.4 : 1);
+      const worth = auctionWorth(state, me, auction.tile, level);
       const bid = auction.highBid + (level === "easy" ? 5 : 10);
       return bid <= worth && bid <= me.cash - (level === "easy" ? 0 : reserve / 2) ? { type: "bid", amount: bid } : { type: "pass" };
     }
@@ -113,7 +112,7 @@ function offerForSet(state: GameState, me: Player, reserve: number): Action | nu
  * Take a trade when what comes in beats what goes out by a margin, valuing
  * squares at their price, and never break up a set we already hold.
  */
-function judgeTrade(state: GameState, me: Player, trade: Trade): boolean {
+export function judgeTrade(state: GameState, me: Player, trade: Trade): boolean {
   const worth = (tiles: number[]) => tiles.reduce((sum, t) => sum + BOARD[t]!.price! * (state.deeds[t]!.mortgaged ? 0.5 : 1), 0);
   const breaksMySet = trade.get.tiles.some((t) => {
     const group = BOARD[t]!.group;
@@ -125,14 +124,19 @@ function judgeTrade(state: GameState, me: Player, trade: Trade): boolean {
   return incoming >= outgoing * 1.4;
 }
 
+/** The most a bot would pay for `tile` at auction. */
+export function auctionWorth(state: GameState, me: Player, tile: number, level: BotLevel = "hard"): number {
+  return BOARD[tile]!.price! * (level === "easy" ? 0.8 : completesSet(state, me, tile) || blocksSet(state, me, tile) ? 1.4 : 1);
+}
+
 /** Buying `tile` would give `me` the whole colour set. */
-function completesSet(state: GameState, me: Player, tile: number): boolean {
+export function completesSet(state: GameState, me: Player, tile: number): boolean {
   const group = BOARD[tile]!.group;
   return Boolean(group) && groupOf(group!).every((i) => i === tile || state.deeds[i]!.owner === me.id);
 }
 
 /** Someone else owns the rest of `tile`'s set, so buying it stops them. */
-function blocksSet(state: GameState, me: Player, tile: number): boolean {
+export function blocksSet(state: GameState, me: Player, tile: number): boolean {
   const group = BOARD[tile]!.group;
   if (!group) return false;
   const others = groupOf(group).filter((i) => i !== tile).map((i) => state.deeds[i]!.owner);

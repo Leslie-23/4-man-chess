@@ -2,6 +2,7 @@
 
 import { BOARD, currentActor, groupOf, netWorth, rentFor, unmortgageCost, type Action, type GameState } from "@fourman/monopoly-engine";
 import { GROUP_COLOR, money, tokenColor } from "../lib/look";
+import { Effigy } from "./Effigy";
 
 /** Everyone at the table: cash, net worth, and who's in jail or out. */
 export function Players({ state, me, onVoice, speaking }: { state: GameState; me: string | null; onVoice?: ReadonlySet<string>; speaking?: ReadonlySet<string> }) {
@@ -11,7 +12,7 @@ export function Players({ state, me, onVoice, speaking }: { state: GameState; me
     <ol className="players">
       {ranked.map((p) => (
         <li key={p.id} className={[p.id === current && "current", p.bankrupt && "out", p.id === me && "me"].filter(Boolean).join(" ")}>
-          <i className={speaking?.has(p.id) ? "token speaking" : "token"} style={{ background: tokenColor(p.id) }}>{p.name[0]}</i>
+          <Effigy id={p.id} name={p.name} className={speaking?.has(p.id) ? "speaking" : undefined} />
           <span className="player-name">
             <span className="rank-name">{p.name}</span>
             {p.id === me && <span className="tag">you</span>}
@@ -52,7 +53,8 @@ export function TileInfo({ state, tile, names }: { state: GameState; tile: numbe
       {info.kind === "station" && <span className="muted small">Rent 25 / 50 / 100 / 200 for 1–4 stations owned.</span>}
       {info.kind === "utility" && <span className="muted small">Rent is 4× the dice, or 10× with both utilities.</span>}
       {deed && (
-        <span>
+        <span className="owned-by">
+          {deed.owner && <Effigy id={deed.owner} name={names(deed.owner)} />}
           {deed.owner ? `Owned by ${names(deed.owner)}${deed.mortgaged ? " · mortgaged" : ""} · rent now ${money(rentFor(state, tile, 7))}${info.kind === "utility" ? " on a 7" : ""}` : "For sale"}
         </span>
       )}
